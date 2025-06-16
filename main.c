@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 /*#include "WinCryptEx.h"*/
 #include "/opt/cprocsp/include/cpcsp/CSP_WinCrypt.h"
 
@@ -13,8 +14,12 @@ static HCRYPTPROV hProv = 0;
 static HCRYPTKEY hKey = 0;
 static PCERT_PUBLIC_KEY_INFO pPubKeyInfo = NULL;
 static BYTE *pbSignature = NULL;
+static BYTE *pbHash = NULL;
 
 /*#define CONTAINER _TEXT("\\\\.\\HDIMAGE\\test")*/
+
+#define BUFSIZE 256
+#define SHA512LEN 64
 
 static void CleanUp(void);
 static void HandleError(const char *);
@@ -22,8 +27,7 @@ static void HandleError(const char *);
 void Signing();
 void CheckSigning();
 
-#define BUFSIZE 256
-#define SHA512LEN 64
+
 
 int main(int argc, char *argv[]) {
 
@@ -37,6 +41,9 @@ int main(int argc, char *argv[]) {
     DWORD dwSigLen;
     DWORD dwInfoLen;
     FILE *signature;
+
+    BYTE *pbBuffer = (BYTE *)"The data that is to be hashed and signed.";
+    DWORD dwBufferLen = (DWORD)(strlen((char *)pbBuffer + 1));
 
     if(argc != 2 || argv[1] == NULL)
         HandleError("input filename");
@@ -74,41 +81,71 @@ int main(int argc, char *argv[]) {
 
     // CalcHash
 
-    DWORD cbRead = 0;
-    BYTE file[BUFSIZE];
+    /*DWORD cbRead = 0;*/
+    /*BYTE file[BUFSIZE];*/
+    /**/
+    /*if(!CryptCreateHash(hProv, CALG_SHA_512, 0, 0, &hHash))*/
+    /*    HandleError("CryptCreateHash failed!");*/
+    /*do {*/
+    /*    cbRead = (DWORD) fread(file, 1, BUFSIZE, hFile);*/
+    /**/
+    /*    if(cbRead) {*/
+    /*        if(!CryptHashData(hHash, file, BUFSIZE, 0)) {*/
+    /*            CryptDestroyHash(hHash);*/
+    /*            HandleError("CryptHashData failed");*/
+    /*        }*/
+    /*    }*/
+    /*} while (!feof(hFile));*/
+    /**/
+    /*cbHash = SHA512LEN;*/
+    /*if(!CryptGetHashParam(hHash, HP_HASHVAL, fHash, &cbHash, 0)) {*/
+    /*    CryptDestroyHash(hHash);*/
+    /*    CryptReleaseContext(hProv, 0);*/
+    /*    HandleError("CryptGetHashParam failed"); */
+    /*}*/
+    /**/
+    /*printf("SHA512 hash of file %s is: ", argv[1]);*/
+    /*for(int i = 0; i < cbHash; i++) {*/
+    /*    printf("%c%c", fDigits[fHash[i] >> 4], fDigits[fHash[i] & 0xf]);*/
+    /*}*/
+    /*printf("\n");*/
+    /**/
+    /*dwSigLen = 0;*/
+    /*if(CryptSignHashA(hHash, AT_SIGNATURE, NULL, 0, NULL, &dwSigLen))*/
+    /*    printf("Signature lenght %d found.\n", dwSigLen);*/
+    /*else*/
+    /*    HandleError("Error during CryptSignHash.");*/
 
-    if(!CryptCreateHash(hProv, CALG_SHA_512, 0, 0, &hHash))
-        HandleError("CryptCreateHash failed!");
-    do {
-        cbRead = (DWORD) fread(file, 1, BUFSIZE, hFile);
-        
-        if(cbRead) {
-            if(!CryptHashData(hHash, file, BUFSIZE, 0)) {
-                CryptDestroyHash(hHash);
-                HandleError("CryptHashData failed");
-            }
-        }
-    } while (!feof(hFile));
 
-    cbHash = SHA512LEN;
-    if(!CryptGetHashParam(hHash, HP_HASHVAL, fHash, &cbHash, 0)) {
-        CryptDestroyHash(hHash);
-        CryptReleaseContext(hProv, 0);
-        HandleError("CryptGetHashParam failed"); 
-    }
+    if(CryptCreateHash(hProv, CALG_GR3411_2012_256, 0, 0, &hHash))
+        printf("Hash object created.\n");
+    else
+        HandleError("Error during created hash.");
 
-    printf("SHA512 hash of file %s is: ", argv[1]);
-    for(int i = 0; i < cbHash; i++) {
-        printf("%c%c", fDigits[fHash[i] >> 4],
-            fDigits[fHash[i] & 0xf]);
-    }
-    printf("\n");
+    if(CryptGetHashParam(hHash, HP_OID, NULL, &cbHash, 0))
+        printf("Size of the BLOB determined.\n");
+    else
+        HandleError("Error during CryptGetHashParam.");
+
+    pbHash = (BYTE *)malloc(cbHash);
+    if(!pbHash)
+        HandleError("Out of memory.\n");
+
+    if(CryptGetHashParam(hHash, HP_OID, pbHash, &cbHash, 0))
+        printf("Parameters have been written to the pbHash.\n");
+    else
+        HandleError("Error during CryptGetHashParam.");
+
+    if(CryptHashData(hHash, pbBuffer, dwBufferLen, 0))
+        printf("The data buffer has been hashed.\n");
+    else
+        HandleError("Error during CryptHashData");
 
     dwSigLen = 0;
-    if(CryptSignHashA(hHash, AT_SIGNATURE, NULL, 0, NULL, &dwSigLen))
+    if(CryptSignHash(hHash, AT_SIGNATURE, NULL, 0, NULL, &dwSigLen))
         printf("Signature lenght %d found.\n", dwSigLen);
     else
-        HandleError("Error during CryptSignHash.");
+        HandleError("Error during CryptSignHash");
 
     pbSignature = (BYTE *) malloc(dwSigLen);
     if(!pbSignature)
