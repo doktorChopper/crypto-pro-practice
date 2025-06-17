@@ -169,7 +169,7 @@ static void verifySignature(const char * sig, const char * filename) {
 
     } while(!feof(fin));
 
-    if(!(signature = fopen("signature.bin", "r+b"))) {
+    if(!(signature = fopen(sig, "rb"))) {
         fclose(signature);
         fclose(fin);
         handleError("Problem opening the file signature.bin\n");
@@ -178,6 +178,8 @@ static void verifySignature(const char * sig, const char * filename) {
     fseek(signature, 0, SEEK_END);
     dwSigLen = ftell(signature);
     fseek(signature, 0, SEEK_SET);
+
+    pbSignature = (BYTE*) malloc(dwSigLen);
 
     fread(pbSignature, 1, dwSigLen, signature);
     fclose(signature);
