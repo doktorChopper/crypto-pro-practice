@@ -1,7 +1,11 @@
+#include <netinet/in.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <arpa/inet.h>
+#include <wchar.h>
 /*#include "WinCryptEx.h"*/
 #include "/opt/cprocsp/include/cpcsp/CSP_WinCrypt.h"
 
@@ -76,22 +80,53 @@ static void verifySignature(const char * sig, const char * filename) {
     DWORD dwInfoLen;
     DWORD cbHash = 0;
 
-    if(!(pubKey = fopen("pubKey.txt", "r+b"))) {
+    if(!(pubKey = fopen("pubKey.key", "rb"))) {
         fclose(pubKey);
-        handleError("Problem opening the file pubKey.txt\n");
+        handleError("Problem opening the file pubKey.key\n");
     }
     
-    long ogPosPub = ftell(pubKey);
+
+    /*long ogPosPub = ftell(pubKey);*/
     fseek(pubKey, 0, SEEK_END);
     dwInfoLen = ftell(pubKey);
-    fseek(pubKey, ogPosPub, SEEK_SET);
+    fseek(pubKey, 0, SEEK_SET);
+
+    BYTE * data = (BYTE*) malloc(dwInfoLen);
+
+    if(!data) {
+        fclose(pubKey);
+        handleError("Out of memory.");
+    }
+
+    fread(data, 1, dwInfoLen, pubKey);
+
+    fclose(pubKey);
 
     printf("%d\n", dwInfoLen);
+    /*pPubKeyInfo = (PCERT_PUBLIC_KEY_INFO) malloc(dwInfoLen);*/
+    DWORD cbPubKeyInfo = 0;
 
-    fread(pPubKeyInfo, 1, dwInfoLen, pubKey);
+    /*fread(pPubKeyInfo, 1, dwInfoLen, pubKey);*/
 
-    if(!CryptImportPublicKeyInfo(hProv, X509_ASN_ENCODING, pPubKeyInfo, &hPubKey))
+    if(!CryptDecodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, data, dwInfoLen, CRYPT_DECODE_ALLOC_FLAG, NULL, &pPubKeyInfo, &cbPubKeyInfo)) {
+        free(data);
+        handleError("Error during CryptDecodeObject.");
+    } 
+
+    free(data);
+
+    /*if(!CryptImportPublicKeyInfo(hProv, X509_ASN_ENCODING, NULL, &hPubKey)) {*/
+    /*    handleError("Error during CryptExportPublicKeyInfo for signkey.");*/
+    /*}*/
+    /*printf("Size of the CERT_PUBLIC_KEY_INFO determined %d.\n", dwInfoLen);*/
+
+    /*pPubKeyInfo = (PCERT_PUBLIC_KEY_INFO) malloc(dwInfoLen);*/
+
+    if(!CryptImportPublicKeyInfo(hProv, X509_ASN_ENCODING, pPubKeyInfo, &hPubKey)) {
+        fclose(pubKey);
+        fclose(fin);
         handleError("Public key import failed!");
+    }
     printf("The key has been imported.\n");
 
     if(!CryptCreateHash(hProv, CALG_GR3411_2012_256, 0, 0, &hHash))
@@ -110,6 +145,17 @@ static void verifySignature(const char * sig, const char * filename) {
         handleError("Error during CryptGetHashParam.");
     printf("Parameters have been written to the pbHash.\n");
 
+    if(!(fin = fopen(filename, "r+b"))) {
+
+        // TODO сделать как нибудь по другому
+
+        char s[BUFSIZE];
+        if(snprintf(s, BUFSIZE, "could not open file %s", filename) < 0)
+            printf("error snprintf");
+        handleError(s);
+    }
+    printf("The file %s was opened.\n", filename);
+
     DWORD cbRead;
     BYTE chFile[BUFSIZE];
 
@@ -123,16 +169,18 @@ static void verifySignature(const char * sig, const char * filename) {
 
     } while(!feof(fin));
 
-    if(!(signature = fopen("signature.txt", "r+b"))) {
+    if(!(signature = fopen("signature.bin", "r+b"))) {
         fclose(signature);
         fclose(fin);
-        handleError("Problem opening the file signature.txt\n");
+        handleError("Problem opening the file signature.bin\n");
     }
 
-    long ogPos = ftell(signature);
     fseek(signature, 0, SEEK_END);
     dwSigLen = ftell(signature);
-    fseek(signature, ogPos, SEEK_SET);
+    fseek(signature, 0, SEEK_SET);
+
+    fread(pbSignature, 1, dwSigLen, signature);
+    fclose(signature);
 
     if(!CryptVerifySignature(hHash, pbSignature, dwSigLen, hPubKey, NULL, 0))
         handleError("Signature not validated!\n");
@@ -176,14 +224,40 @@ static void signData(const char * filename) {
     }
     printf("Contents have been written to the CERT_PUBLIC_KEY_INFO.\n");
 
-    if(!(pubKey = fopen("pubKey.txt", "w+b"))) {
+    if(!(pubKey = fopen("pubKey.key", "w+b"))) {
         fclose(pubKey);
         fclose(fin);
-        handleError("Problem opening the file pubKey.txt\n");
+        handleError("Problem opening the file pubKey.key\n");
     }
 
-    fwrite(pPubKeyInfo, 1, dwInfoLen, pubKey);
+    /**/
+    /*fwrite(pPubKeyInfo, 1, dwInfoLen, pubKey);*/
+    /*fclose(pubKey);*/
+
+    DWORD size = 0;
+
+    PCERT_PUBLIC_KEY_INFO ppp = NULL;
+    if(!CryptEncodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, pPubKeyInfo, 0, NULL, NULL, &size)) {
+        fclose(pubKey);
+        handleError("Error during CryptEncodeObjectEx.");
+    }
+
+    BYTE * data = (BYTE*) malloc(size);
+    if(!data) {
+        fclose(pubKey);
+        handleError("Out of memory.");
+    }
+
+    if(!CryptEncodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, pPubKeyInfo, 0, NULL, data, &size)) {
+        free(data);
+        fclose(pubKey);
+        handleError("Error during CryptEncodeObjectEx.");
+    }
+
+    fwrite(data, 1, size, pubKey);
+
     fclose(pubKey);
+    free(data);
 
     if(!CryptCreateHash(hProv, CALG_GR3411_2012_256, 0, 0, &hHash)) {
         fclose(fin);
@@ -235,10 +309,10 @@ static void signData(const char * filename) {
     }
     printf("pbSignature is the hash signature.\n");
 
-    if(!(signature = fopen("signature.txt", "w+b"))) {
+    if(!(signature = fopen("signature.bin", "w+b"))) {
         fclose(signature);
         fclose(fin);
-        handleError("Problem opening the file signature.txt\n");
+        handleError("Problem opening the file signature.bin\n");
     }
 
     fwrite(pbSignature, 1, dwSigLen, signature);
@@ -265,5 +339,8 @@ static void handleError(const char *s) {
     printf("Error description: %s\n", s);
     cleanUp();
     if(!err) err = 1;
-    exit(err);
+
+    // TODO удалить exit(0)
+
+    exit(0);
 }
