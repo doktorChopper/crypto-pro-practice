@@ -6,11 +6,11 @@
 
 #include <arpa/inet.h>
 #include <wchar.h>
-/*#include "WinCryptEx.h"*/
+#include "WinCryptEx.h"
 #include "/opt/cprocsp/include/cpcsp/CSP_WinCrypt.h"
 
 #include "/opt/cprocsp/include/reader/tchar.h"
-#include "/opt/cprocsp/include/cpcsp/WinCryptEx.h"
+/*#include "/opt/cprocsp/include/cpcsp/WinCryptEx.h"*/
 
 #define CONTAINER _TEXT("\\\\.\\HDIMAGE\\TestKeyCon")
 #define BUFSIZE 256
@@ -27,13 +27,15 @@ static PCERT_PUBLIC_KEY_INFO pPubKeyInfo = NULL;
 
 static void handleError(const char *);
 static void cleanUp(void);
-static void signData(const char *);
-static void verifySignature(const char *, const char *);
+static void signData(const char *, const char *);
+static void verifySignature(const char *, const char *, const char *);
+static void hashData(const char *);
 
 typedef struct {
     char * key_file;
     char * signature_file;
     char * input_file;
+    char * output_file;
     BOOL verify_mode;
     BOOL sign_mode;
     BOOL genkey_mode;
@@ -43,16 +45,20 @@ void printHelp(void);
 BOOL parse_args(int, char *[], progParams *);
 
 void printHelp(void) {
-    printf("CryptoSignTool - утилита для работы с электронной подписью\n\n"
+    printf("\nCryptoSignTool - утилита для работы с электронной подписью\n\n"
             "Использование: \n"
-                "crypto-sign-tool [команда] [параметры]\n\n"
+            "   crypto-sign-tool [команда] [параметры]\n\n"
             "Команды: \n"
-                "sign        Создание подписи для файла\n"
-                "verify      Проверка подписи\n\n"
+            "   sign        Создание подписи для файла\n"
+            "   verify      Проверка подписи\n\n"
             "Параметры: \n"
-                "-k, --key <файл>        Файл ключа (.key)\n"
-                "-f, --file <файл>       Входной файл для подписи/проверки\n"
-                "-s, --signature <файл>  Файл с электронной подписью (только для verify)\n");
+            "   -k, --key <файл>        Файл ключа (.key)\n"
+            "   -f, --file <файл>       Входной файл для подписи/проверки\n"
+            "   -s, --signature <файл>  Файл с электронной подписью (только для verify)\n"
+            "   -o, --out <файл>        Выходной файл\n\n"
+            "Примеры использования:\n"
+            "   crypto-sign-tool sign --file <file.txt> --out <signature.sig>\n"
+            "   crypto-sign-tool verify -s <signature.sig> -f <file.txt> -k <pubkey.key>\n\n");
 }
 
 BOOL parse_args(int argc, char * argv[], progParams * params) {
@@ -97,6 +103,12 @@ BOOL parse_args(int argc, char * argv[], progParams * params) {
                 return FALSE;
             }
             params->signature_file = argv[++i];
+        } else if (strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--out") == 0){
+            if(i + 1 >= argc) {
+                printf("error parse_args");
+                return FALSE;
+            }
+            params->output_file = argv[++i];
         } else {
             printf("Unknown param\n");
             return FALSE;
@@ -113,6 +125,7 @@ int main(int argc, char * argv[]) {
         printf("Используйте --help для справки\n");
         exit(1);
     }
+
     // Получение дескриптора криптопровайдера
 
     if(!CryptAcquireContextA(&hProv, CONTAINER, NULL, PROV_EC_CURVE25519, 0))
@@ -122,18 +135,14 @@ int main(int argc, char * argv[]) {
 
     if(params.sign_mode) {
         printf("Start signing data: %s\n", params.input_file);
-        signData(params.input_file);
+        signData(params.input_file, params.output_file);
     } else if(params.verify_mode) {
         printf("Start verify signature");
-        verifySignature(params.signature_file, params.input_file);
+        verifySignature(params.signature_file, params.input_file, params.key_file);
     } else if(params.genkey_mode) {
-        if(!CryptGenKey(hProv, CALG_ED25519, 0, &hPubKey))
-            handleError("error");
+        if(!CryptGenKey(hProv, CALG_ED25519, CRYPT_EXPORTABLE, &hPubKey))
+            handleError("Error during CryptKeyGen!");
         printf("Key gen successfull");
-
-        if(!CryptDestroyKey(hPubKey))
-            handleError("error");
-        printf("Key was successfull destroyed");
     }
 
     cleanUp();
@@ -141,9 +150,8 @@ int main(int argc, char * argv[]) {
     return 0;
 }
 
-static void verifySignature(const char * sig, const char * filename) {
+static void verifySignature(const char * sig, const char * fn, const char * pb) {
 
-    FILE * fin;
     FILE * pubKey;
     FILE * signature;
 
@@ -151,9 +159,11 @@ static void verifySignature(const char * sig, const char * filename) {
     DWORD dwInfoLen;
     DWORD cbHash = 0;
 
-    if(!(pubKey = fopen("pubkey.key", "rb"))) {
+    if(!(pubKey = fopen(pb, "rb"))) {
         fclose(pubKey);
-        handleError("Problem opening the file pubkey.key\n");
+        char s[256];
+        snprintf(s, 256, "Problem opening the file %s", pb);
+        handleError(s);
     }
     
 
@@ -174,10 +184,7 @@ static void verifySignature(const char * sig, const char * filename) {
     fclose(pubKey);
 
     printf("%d\n", dwInfoLen);
-    /*pPubKeyInfo = (PCERT_PUBLIC_KEY_INFO) malloc(dwInfoLen);*/
     DWORD cbPubKeyInfo = 0;
-
-    /*fread(pPubKeyInfo, 1, dwInfoLen, pubKey);*/
 
     if(!CryptDecodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, data, dwInfoLen, CRYPT_DECODE_ALLOC_FLAG, NULL, &pPubKeyInfo, &cbPubKeyInfo)) {
         free(data);
@@ -186,64 +193,18 @@ static void verifySignature(const char * sig, const char * filename) {
 
     free(data);
 
-    /*if(!CryptImportPublicKeyInfo(hProv, X509_ASN_ENCODING, NULL, &hPubKey)) {*/
-    /*    handleError("Error during CryptExportPublicKeyInfo for signkey.");*/
-    /*}*/
-    /*printf("Size of the CERT_PUBLIC_KEY_INFO determined %d.\n", dwInfoLen);*/
-
-    /*pPubKeyInfo = (PCERT_PUBLIC_KEY_INFO) malloc(dwInfoLen);*/
-
     if(!CryptImportPublicKeyInfo(hProv, X509_ASN_ENCODING, pPubKeyInfo, &hPubKey)) {
         fclose(pubKey);
-        fclose(fin);
         handleError("Public key import failed!");
     }
     printf("The key has been imported.\n");
 
-    if(!CryptCreateHash(hProv, CALG_GR3411_2012_256, 0, 0, &hHash))
-        handleError("Error during created hash.");
-    printf("Hash object created.\n");
-
-    if(!CryptGetHashParam(hHash, HP_OID, NULL, &cbHash, 0))
-        handleError("Error during CryptGetHashParam.");
-    printf("Size of the BLOB determined.\n");
-
-    pbHash = (BYTE *)malloc(cbHash);
-    if(!pbHash)
-        handleError("Out of memory.\n");
-
-    if(!CryptGetHashParam(hHash, HP_OID, pbHash, &cbHash, 0))
-        handleError("Error during CryptGetHashParam.");
-    printf("Parameters have been written to the pbHash.\n");
-
-    if(!(fin = fopen(filename, "r+b"))) {
-
-        // TODO сделать как нибудь по другому
-
-        char s[BUFSIZE];
-        if(snprintf(s, BUFSIZE, "could not open file %s", filename) < 0)
-            printf("error snprintf");
-        handleError(s);
-    }
-    printf("The file %s was opened.\n", filename);
-
-    DWORD cbRead;
-    BYTE chFile[BUFSIZE];
-
-    do {
-        cbRead = (DWORD) fread(chFile, 1, BUFSIZE, fin);
-
-        if(cbRead) {
-            if(!CryptHashData(hHash, chFile, cbRead, 0))
-                handleError("CryptHashData failed!"); // TODO закрыть файл?
-        }
-
-    } while(!feof(fin));
+    hashData(fn);
 
     if(!(signature = fopen(sig, "rb"))) {
-        fclose(signature);
-        fclose(fin);
-        handleError("Problem opening the file signature.bin\n");
+        char s[256];
+        snprintf(s, 256, "Problem opening the file %s", sig);
+        handleError(s);
     }
 
     fseek(signature, 0, SEEK_END);
@@ -260,9 +221,8 @@ static void verifySignature(const char * sig, const char * filename) {
     printf("The signature has been verified!\n");
 }
 
-static void signData(const char * filename) {
+static void signData(const char * fn, const char * sig) {
 
-    FILE * dataToSign;
     FILE * signature;
     FILE * pubKey;
 
@@ -270,38 +230,20 @@ static void signData(const char * filename) {
     DWORD dwSigLen;
     DWORD cbHash = 0;
 
-    if(!(dataToSign = fopen(filename, "r+b"))) {
-
-        // TODO сделать как нибудь по другому
-
-        char s[BUFSIZE];
-        if(snprintf(s, BUFSIZE, "could not open file %s", filename) < 0)
-            printf("error snprintf");
-        handleError(s);
-    }
-    printf("The file %s was opened.\n", filename);
-
-    if(!CryptExportPublicKeyInfo(hProv, AT_SIGNATURE, X509_ASN_ENCODING, NULL, &dwInfoLen)) {
-        fclose(dataToSign);
+    if(!CryptExportPublicKeyInfo(hProv, AT_SIGNATURE, X509_ASN_ENCODING, NULL, &dwInfoLen))
         handleError("Error during CryptExportPublicKeyInfo for signkey.");
-    }
     printf("Size of the CERT_PUBLIC_KEY_INFO determined.\n");
 
     pPubKeyInfo = (PCERT_PUBLIC_KEY_INFO) malloc(dwInfoLen);
-    if(!pPubKeyInfo) {
-        fclose(dataToSign);
+    if(!pPubKeyInfo)
         handleError("Out of memory.\n");
-    }
 
-    if(!CryptExportPublicKeyInfo(hProv, AT_SIGNATURE, X509_ASN_ENCODING, pPubKeyInfo, &dwInfoLen)) {
-        fclose(dataToSign);
+    if(!CryptExportPublicKeyInfo(hProv, AT_SIGNATURE, X509_ASN_ENCODING, pPubKeyInfo, &dwInfoLen))
         handleError("Error during CryptExportPublicKeyInfo for signkey.");
-    }
     printf("Contents have been written to the CERT_PUBLIC_KEY_INFO.\n");
 
     if(!(pubKey = fopen("pubkey.key", "w+b"))) {
         fclose(pubKey);
-        fclose(dataToSign);
         handleError("Problem opening the file pubkey.key\n");
     }
 
@@ -309,21 +251,18 @@ static void signData(const char * filename) {
 
     if(!CryptEncodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, pPubKeyInfo, 0, NULL, NULL, &size)) {
         fclose(pubKey);
-        fclose(dataToSign);
         handleError("Error during CryptEncodeObjectEx.");
     }
 
     BYTE * data = (BYTE*) malloc(size);
     if(!data) {
         fclose(pubKey);
-        fclose(dataToSign);
         handleError("Out of memory.");
     }
 
     if(!CryptEncodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, pPubKeyInfo, 0, NULL, data, &size)) {
         free(data);
         fclose(pubKey);
-        fclose(dataToSign);
         handleError("Error during CryptEncodeObjectEx.");
     }
 
@@ -332,44 +271,9 @@ static void signData(const char * filename) {
     fclose(pubKey);
     free(data);
 
-    if(!CryptCreateHash(hProv, CALG_GR3411_2012_256, 0, 0, &hHash)) {
-        fclose(dataToSign);
-        handleError("Error during created hash.");
-    }
-    printf("Hash object created.\n");
+    // Вычисление хеш-значения от файла
 
-    if(!CryptGetHashParam(hHash, HP_OID, NULL, &cbHash, 0)) {
-        fclose(dataToSign);
-        handleError("Error during CryptGetHashParam.");
-    }
-    printf("Size of the BLOB determined.\n");
-
-    pbHash = (BYTE *)malloc(cbHash);
-    if(!pbHash) {
-        fclose(dataToSign);
-        handleError("Out of memory.\n");
-    }
-
-    if(!CryptGetHashParam(hHash, HP_OID, pbHash, &cbHash, 0)) {
-        fclose(dataToSign);
-        handleError("Error during CryptGetHashParam.");
-    }
-    printf("Parameters have been written to the pbHash.\n");
-
-    DWORD cbRead;
-    BYTE chFile[BUFSIZE];
-
-    do {
-        cbRead = (DWORD) fread(chFile, 1, BUFSIZE, dataToSign);
-
-        if(cbRead) {
-            if(!CryptHashData(hHash, chFile, cbRead, 0))
-                handleError("CryptHashData failed!"); // TODO закрыть файл?
-        }
-
-    } while(!feof(dataToSign));
-
-    fclose(dataToSign);
+    hashData(fn);
 
     dwSigLen = 0;
     if(!CryptSignHash(hHash, AT_SIGNATURE, NULL, 0, NULL, &dwSigLen))
@@ -384,13 +288,48 @@ static void signData(const char * filename) {
         handleError("Error during CryptSignHash.");
     printf("pbSignature is the hash signature.\n");
 
-    if(!(signature = fopen("signature.bin", "w+b"))) {
+    if((signature = fopen(sig, "w+b"))) {
+        fwrite(pbSignature, 1, dwSigLen, signature);
         fclose(signature);
-        handleError("Problem opening the file signature.bin\n");
+    } else {
+        char s[256];
+        snprintf(s, 256, "could not open file %s", fn);
+        handleError(s);
     }
 
-    fwrite(pbSignature, 1, dwSigLen, signature);
-    fclose(signature);
+}
+
+static void hashData(const char * fn) {
+
+    FILE * dataToSign;
+
+    if(!(dataToSign = fopen(fn, "r+b"))) {
+
+        // TODO сделать как нибудь по другому
+
+        char s[BUFSIZE];
+        if(snprintf(s, BUFSIZE, "could not open file %s", fn) < 0)
+            printf("error snprintf");
+        handleError(s);
+    }
+    printf("The file %s was opened.\n", fn);
+
+    if(!CryptCreateHash(hProv, CALG_GR3411_2012_256, 0, 0, &hHash)) {
+        fclose(dataToSign);
+        handleError("Error during created hash.");
+    }
+    printf("Hash object created.\n");
+
+    DWORD cbRead;
+    BYTE chFile[BUFSIZE];
+
+    do {
+        cbRead = (DWORD) fread(chFile, 1, BUFSIZE, dataToSign);
+        if(cbRead)
+            if(!CryptHashData(hHash, chFile, cbRead, 0))
+                handleError("CryptHashData failed!"); // TODO закрыть файл?
+    } while(!feof(dataToSign));
+    fclose(dataToSign);
 }
 
 static void cleanUp(void) {
