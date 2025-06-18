@@ -6,14 +6,14 @@
 
 #include <arpa/inet.h>
 #include <wchar.h>
-#include "WinCryptEx.h"
+/*#include "WinCryptEx.h"*/
 #include "/opt/cprocsp/include/cpcsp/CSP_WinCrypt.h"
 
 #include "/opt/cprocsp/include/reader/tchar.h"
-/*#include "/opt/cprocsp/include/cpcsp/WinCryptEx.h"*/
+#include "/opt/cprocsp/include/cpcsp/WinCryptEx.h"
 
 #define CONTAINER _TEXT("\\\\.\\HDIMAGE\\TestKeyCon")
-#define BUFSIZE 256
+#define BUFSIZE 512
 
 
 static HCRYPTPROV hProv = 0;
@@ -128,8 +128,8 @@ int main(int argc, char * argv[]) {
 
     // Получение дескриптора криптопровайдера
 
-    if(!CryptAcquireContextA(&hProv, CONTAINER, NULL, PROV_EC_CURVE25519, 0))
-    /*if(!CryptAcquireContextA(&hProv, NULL, NULL, PROV_EC_CURVE25519, CRYPT_VERIFYCONTEXT))*/
+    /*if(!CryptAcquireContextA(&hProv, CONTAINER, NULL, PROV_GOST_2012_256, 0))*/
+    if(!CryptAcquireContextA(&hProv, NULL, NULL, PROV_GOST_2012_256, CRYPT_VERIFYCONTEXT))
         handleError("Error during CryptAcquireContext.");
     printf("CSP is acquired!\n");
 
