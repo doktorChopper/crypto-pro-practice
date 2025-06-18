@@ -36,6 +36,7 @@ typedef struct {
     char * input_file;
     BOOL verify_mode;
     BOOL sign_mode;
+    BOOL genkey_mode;
 } progParams;
 
 void printHelp(void);
@@ -65,10 +66,41 @@ BOOL parse_args(int argc, char * argv[], progParams * params) {
 
     if(strcmp(argv[1], "sign") == 0)
         params->sign_mode = TRUE;
-    else if(strcmp(argv[1],"verify") == 0)
+    else if(strcmp(argv[1], "verify") == 0) 
         params->verify_mode = TRUE;
+    else if(strcmp(argv[1], "genkey") == 0)
+        params->genkey_mode = TRUE;
+    else if(strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
+        printHelp();
+        return FALSE;
+    } else {
+        printf("Unknown command\n");
+        return FALSE;
+    }
     
     for(int i = 2; i < argc; ++i) {
+        if(strcmp(argv[i], "-k") == 0 || strcmp(argv[i], "--key") == 0) {
+            if(i + 1 >= argc) {
+                printf("error parse_args");
+                return FALSE;
+            }
+            params->key_file = argv[++i];
+        } else if(strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--file") == 0) {
+            if(i + 1 >= argc) {
+                printf("error parse_args");
+                return FALSE;
+            }
+            params->input_file = argv[++i];
+        } else if(strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--signature") == 0) {
+            if(i + 1 >= argc) {
+                printf("error parse_args");
+                return FALSE;
+            }
+            params->signature_file = argv[++i];
+        } else {
+            printf("Unknown param\n");
+            return FALSE;
+        }
     }
 
 }
@@ -77,30 +109,31 @@ int main(int argc, char * argv[]) {
 
     progParams params; 
 
+    if(!parse_args(argc, argv, &params)) {
+        printf("Используйте --help для справки\n");
+        exit(1);
+    }
     // Получение дескриптора криптопровайдера
 
-    /*if(!CryptAcquireContextA(&hProv, CONTAINER, NULL, PROV_EC_CURVE25519, 0))*/
-    if(!CryptAcquireContextA(&hProv, NULL, NULL, PROV_EC_CURVE25519, CRYPT_VERIFYCONTEXT))
+    if(!CryptAcquireContextA(&hProv, CONTAINER, NULL, PROV_EC_CURVE25519, 0))
+    /*if(!CryptAcquireContextA(&hProv, NULL, NULL, PROV_EC_CURVE25519, CRYPT_VERIFYCONTEXT))*/
         handleError("Error during CryptAcquireContext.");
     printf("CSP is acquired!\n");
 
-    if(!strcmp(argv[1], "sign")) {
-
-        if(argv[2] == NULL) {
-            printHelp();
-            exit(0);
-        }
-        printf("Start signing data: %s\n", argv[2]);
-        signData(argv[2]);
-
-    } else if(!strcmp(argv[1], "verify")) {
-
-        if(argv[2] == NULL || argv[3] == NULL) {
-            printHelp();
-            exit(0);
-        }
+    if(params.sign_mode) {
+        printf("Start signing data: %s\n", params.input_file);
+        signData(params.input_file);
+    } else if(params.verify_mode) {
         printf("Start verify signature");
-        verifySignature(argv[2], argv[3]);
+        verifySignature(params.signature_file, params.input_file);
+    } else if(params.genkey_mode) {
+        if(!CryptGenKey(hProv, CALG_ED25519, 0, &hPubKey))
+            handleError("error");
+        printf("Key gen successfull");
+
+        if(!CryptDestroyKey(hPubKey))
+            handleError("error");
+        printf("Key was successfull destroyed");
     }
 
     cleanUp();
