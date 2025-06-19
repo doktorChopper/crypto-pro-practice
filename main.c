@@ -17,7 +17,8 @@
 #include "/opt/cprocsp/include/reader/tchar.h"
 
 /*#define CONTAINER _TEXT("\\\\.\\HDIMAGE\\TestKeyCon")*/
-#define CONTAINER _TEXT("\\\\.\\HDIMAGE\\CryptoSignToolCon")
+/*#define CONTAINER _TEXT("\\\\.\\HDIMAGE\\CryptoSignToolCon")*/
+#define CONTAINER _TEXT("\\\\.\\HDIMAGE\\Curve")
 #define BUFSIZE 256
 
 
@@ -64,8 +65,8 @@ void printHelp(void) {
             "   -s, --signature <файл>  Файл с электронной подписью (только для verify)\n"
             "   -o, --out <файл>        Выходной файл\n\n"
             "Примеры использования:\n"
-            "   crypto-sign-tool sign --file <file.txt> --out <signature.sig>\n"
-            "   crypto-sign-tool verify -s <signature.sig> -f <file.txt> -k <pubkey.key>\n\n");
+            "   crypto-sign-tool sign --in <file.txt> --out <signature.sig>\n"
+            "   crypto-sign-tool verify -s <signature.sig> -i <file.txt> -k <pubkey.key>\n\n");
 }
 
 
@@ -83,10 +84,12 @@ int main(int argc, char * argv[]) {
     // Получение дескриптора криптопровайдера
     // Если не существует контейнера по заданному имени, то создается новый контейнер
 
-    if(CryptAcquireContext(&hProv, CONTAINER, NULL, PROV_EC_CURVE25519, 0)) {
+    /*if(CryptAcquireContext(&hProv, CONTAINER, "Crypto-Pro Curve25519 and AES KC1 CSP", PROV_EC_CURVE25519, 0)) {*/
+    if(CryptAcquireContext(&hProv, CONTAINER, NULL, PROV_GOST_2012_256, 0)) {
+    /*if(CryptAcquireContext(&hProv, CONTAINER, NULL, PROV_EC_CURVE25519, CRYPT_VERIFYCONTEXT)) {*/
         printf("A cryptcontext with the %s key container has been acquired.\n", CONTAINER);
     } else {
-        if(!CryptAcquireContext(&hProv, CONTAINER, NULL, PROV_EC_CURVE25519, CRYPT_NEWKEYSET))
+        if(!CryptAcquireContext(&hProv, CONTAINER, NULL, PROV_GOST_2012_256, CRYPT_NEWKEYSET))
             handleError("Could not create a new key container.");
         printf("A new key container has been created.\n");
     }
@@ -141,9 +144,6 @@ static void genKeyMode() {
         if(!CryptGenKey(hProv, AT_SIGNATURE, 0, &hPubKey))
             handleError("Error occurred creating a signature key.\n"); 
         printf("Created a signature key pair.\n");
-
-        if(hPubKey)
-            CryptDestroyKey(hPubKey);
     }
 }
 
@@ -214,10 +214,8 @@ static void verifySignature(const char * sig, const char * fn, const char * pb) 
     fread(pbSignature, 1, dwSigLen, signature);
     fclose(signature);
 
-    if(!CryptVerifySignature(hHash, pbSignature, dwSigLen, hPubKey, NULL, 0)) {
-        free(pbSignature);
+    if(!CryptVerifySignature(hHash, pbSignature, dwSigLen, hPubKey, NULL, 0))
         handleError("Signature not validated!\n");
-    }
     printf("The signature has been verified!\n");
 
     free(pbSignature);
@@ -307,8 +305,6 @@ static void signData(const char * fn, const char * sig) {
         snprintf(s, BUFSIZE, "could not open file %s", sig);
         handleError(s);
     }
-
-    free(pbSignature);
 }
 
 // Функция хэширования данных
@@ -320,7 +316,7 @@ static void hashData(const char * fn) {
     // Создание объекта хэширования
     // CryptCreateHash инициирует хэширование потока данных
 
-    if(!CryptCreateHash(hProv, CALG_GR3411_2012_256, 0, 0, &hHash))
+    if(!CryptCreateHash(hProv, CALG_SHA_512, 0, 0, &hHash))
         handleError("error during CryptCreatedHash.");
     printf("Hash object created.\n");
 
