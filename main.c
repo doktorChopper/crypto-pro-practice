@@ -18,7 +18,7 @@
 
 /*#define CONTAINER _TEXT("\\\\.\\HDIMAGE\\TestKeyCon")*/
 #define CONTAINER _TEXT("\\\\.\\HDIMAGE\\CryptoSignToolCon")
-#define BUFSIZE 512
+#define BUFSIZE 256
 
 
 static HCRYPTPROV hProv = 0;
@@ -26,6 +26,7 @@ static HCRYPTKEY hPubKey = 0;
 static HCRYPTHASH hHash = 0;
 
 static BYTE *pbHash = NULL;
+static BYTE *pbSignature = NULL;
 
 static PCERT_PUBLIC_KEY_INFO pPubKeyInfo = NULL;
 
@@ -97,7 +98,7 @@ int main(int argc, char * argv[]) {
         handleError("Error occurred getting the key container name.");
 
     pszContainerName = (char *)malloc((dwContainerNameLen + 1));
-    
+
     if(!CryptGetProvParam(hProv, PP_CONTAINER, (LPBYTE)pszContainerName, &dwContainerNameLen, 0)) {
         free(pszContainerName);
         handleError("Error occurred getting the key container name.");
@@ -122,7 +123,7 @@ int main(int argc, char * argv[]) {
     return 0;
 }
 
-// Режим генерации новых ключей
+// Функция генерации ключей
 
 static void genKeyMode() {
     if(CryptGetUserKey(hProv, AT_SIGNATURE, &hPubKey)) {
@@ -132,9 +133,10 @@ static void genKeyMode() {
 
         if(!(GetLastError() == (DWORD)NTE_NO_KEY)) 
             handleError("An error other than NTE_NO_KEY getting signature key.\n");
- 
         printf("The signature key does not exist.\n");
         printf("Creating a signature key pair...\n"); 
+
+        // Генерация новой пары ключей
 
         if(!CryptGenKey(hProv, AT_SIGNATURE, 0, &hPubKey))
             handleError("Error occurred creating a signature key.\n"); 
@@ -144,6 +146,8 @@ static void genKeyMode() {
             CryptDestroyKey(hPubKey);
     }
 }
+
+// Функция проверки подписи
 
 static void verifySignature(const char * sig, const char * fn, const char * pb) {
 
@@ -219,6 +223,8 @@ static void verifySignature(const char * sig, const char * fn, const char * pb) 
     free(pbSignature);
 }
 
+// Функция подписи данных
+
 static void signData(const char * fn, const char * sig) {
 
     FILE * signature;
@@ -227,8 +233,6 @@ static void signData(const char * fn, const char * sig) {
     DWORD dwInfoLen;
     DWORD dwSigLen;
     DWORD cbHash = 0;
-
-    BYTE *pbSignature = NULL;
 
     // Экспортирование сведений об открытом ключе в pPubKeyInfo
 
@@ -282,17 +286,15 @@ static void signData(const char * fn, const char * sig) {
 
     dwSigLen = 0;
     if(!CryptSignHash(hHash, AT_SIGNATURE, NULL, 0, NULL, &dwSigLen))
-        handleError("Error during CryptSignHash");
+        handleError("error during CryptSignHash");
     printf("Signature lenght %d found.\n", dwSigLen);
 
     pbSignature = (BYTE*) malloc(dwSigLen);
     if(!pbSignature)
-        handleError("Out of memory.");
+        handleError("out of memory.");
 
-    if(!CryptSignHash(hHash, AT_SIGNATURE, NULL, 0, pbSignature, &dwSigLen)) {
-        free(pbSignature);
-        handleError("Error during CryptSignHash.");
-    }
+    if(!CryptSignHash(hHash, AT_SIGNATURE, NULL, 0, pbSignature, &dwSigLen))
+        handleError("error during CryptSignHash.");
     printf("pbSignature is the hash signature.\n");
 
     // Создание файла с подписью
@@ -301,9 +303,8 @@ static void signData(const char * fn, const char * sig) {
         fwrite(pbSignature, 1, dwSigLen, signature);
         fclose(signature);
     } else {
-        free(pbSignature);
         char s[BUFSIZE];
-        snprintf(s, BUFSIZE, "Could not open file %s", sig);
+        snprintf(s, BUFSIZE, "could not open file %s", sig);
         handleError(s);
     }
 
@@ -314,40 +315,44 @@ static void signData(const char * fn, const char * sig) {
 
 static void hashData(const char * fn) {
 
-    FILE * dataToSign;
+    FILE * data;
 
-    if(!(dataToSign = fopen(fn, "r+b"))) {
+    // Создание объекта хэширования
+    // CryptCreateHash инициирует хэширование потока данных
+
+    if(!CryptCreateHash(hProv, CALG_GR3411_2012_256, 0, 0, &hHash))
+        handleError("error during CryptCreatedHash.");
+    printf("Hash object created.\n");
+
+    if(!(data = fopen(fn, "r+b"))) {
         char s[BUFSIZE];
-        snprintf(s, BUFSIZE, "Could not open file %s", fn);
+        snprintf(s, BUFSIZE, "could not open file %s", fn);
         handleError(s);
     }
     printf("The file %s was opened.\n", fn);
 
-    if(!CryptCreateHash(hProv, CALG_GR3411_2012_256, 0, 0, &hHash)) {
-        fclose(dataToSign);
-        handleError("Error during CryptCreatedHash.");
-    }
-    printf("Hash object created.\n");
-
     DWORD cbRead;
     BYTE chFile[BUFSIZE];
 
+    // Вычисление хэша от данных
+
     do {
-        cbRead = (DWORD) fread(chFile, 1, BUFSIZE, dataToSign);
+        cbRead = (DWORD) fread(chFile, 1, BUFSIZE, data);
         if(cbRead)
             if(!CryptHashData(hHash, chFile, cbRead, 0)) {
-                fclose(dataToSign);
-                handleError("CryptHashData failed!");
+                fclose(data);
+                handleError("cryptHashData failed!");
             }
-    } while(!feof(dataToSign));
+    } while(!feof(data));
 
-    fclose(dataToSign);
+    fclose(data);
 }
 
 static void cleanUp(void) {
 
     free(pPubKeyInfo);
     free(pbHash);
+    free(pbSignature);
 
     if(hPubKey)
         CryptDestroyKey(hPubKey);
@@ -378,7 +383,7 @@ BOOL parse_args(int argc, char * argv[], progParams * params) {
         printHelp();
         return FALSE;
     } else {
-        printf("Unknown command\n");
+        printf("crypto-sign-tool: неверная команда \"%s\"\n", argv[1]);
         return FALSE;
     }
 
@@ -387,30 +392,30 @@ BOOL parse_args(int argc, char * argv[], progParams * params) {
     for(int i = 2; i < argc; ++i) {
         if(strcmp(argv[i], "-k") == 0 || strcmp(argv[i], "--key") == 0) {
             if(i + 1 >= argc) {
-                printf("error parse_args");
+                printf("Error parse_args\n");
                 return FALSE;
             }
             params->key_file = argv[++i];
         } else if(strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--in") == 0) {
             if(i + 1 >= argc) {
-                printf("error parse_args");
+                printf("Error parse_args\n");
                 return FALSE;
             }
             params->input_file = argv[++i];
         } else if(strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--signature") == 0) {
             if(i + 1 >= argc) {
-                printf("error parse_args");
+                printf("Error parse_args\n");
                 return FALSE;
             }
             params->signature_file = argv[++i];
         } else if (strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--out") == 0){
             if(i + 1 >= argc) {
-                printf("error parse_args");
+                printf("Error parse_args\n");
                 return FALSE;
             }
             params->output_file = argv[++i];
         } else {
-            printf("Unknown param\n");
+            printf("crypto-sign-tool: неверный ключ \"%s\"\n", argv[i]);
             return FALSE;
         }
     }
