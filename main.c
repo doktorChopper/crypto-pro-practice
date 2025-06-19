@@ -9,10 +9,12 @@
 /*#include "WinCryptEx.h"*/
 #include "/opt/cprocsp/include/cpcsp/CSP_WinCrypt.h"
 
+
 #include "/opt/cprocsp/include/reader/tchar.h"
 #include "/opt/cprocsp/include/cpcsp/WinCryptEx.h"
 
-#define CONTAINER _TEXT("\\\\.\\HDIMAGE\\TestKeyCon")
+/*#define CONTAINER _TEXT("\\\\.\\HDIMAGE\\TestKeyCon")*/
+#define CONTAINER _TEXT("\\\\.\\HDIMAGE\\CryptoSignToolCon")
 #define BUFSIZE 512
 
 
@@ -129,9 +131,33 @@ int main(int argc, char * argv[]) {
     // Получение дескриптора криптопровайдера
 
     /*if(!CryptAcquireContextA(&hProv, CONTAINER, NULL, PROV_GOST_2012_256, 0))*/
-    if(!CryptAcquireContextA(&hProv, NULL, NULL, PROV_GOST_2012_256, CRYPT_VERIFYCONTEXT))
-        handleError("Error during CryptAcquireContext.");
-    printf("CSP is acquired!\n");
+    if(CryptAcquireContext(&hProv, CONTAINER, NULL, PROV_EC_CURVE25519, 0)) {
+        printf("A cryptcontext with the %s key container has been acquired.\n", CONTAINER);
+    } else {
+
+        if(!CryptAcquireContext(&hProv, CONTAINER, NULL, PROV_EC_CURVE25519, CRYPT_NEWKEYSET))
+            handleError("Could not create a new key container.");
+        printf("A new key container has been created.\n");
+    }
+
+    LPSTR pszUserName;
+    DWORD dwUserNameLen;
+
+    if(!CryptGetProvParam(hProv, PP_CONTAINER, NULL, &dwUserNameLen, 0)) {
+        handleError("error occurred getting the key container name.");
+    }
+
+    pszUserName=(char *)malloc((dwUserNameLen + 1));
+    
+    if(!CryptGetProvParam(hProv, PP_CONTAINER, (LPBYTE)pszUserName, &dwUserNameLen, 0)) {
+        free(pszUserName);
+        handleError("error occurred getting the key container name.");
+    } else {
+        printf("A crypto context has been acquired and \n");
+        printf("The name on the key container is %s\n\n", pszUserName);
+        free(pszUserName);
+    }
+
 
     if(params.sign_mode) {
         printf("Start signing data: %s\n", params.input_file);
@@ -140,9 +166,23 @@ int main(int argc, char * argv[]) {
         printf("Start verify signature");
         verifySignature(params.signature_file, params.input_file, params.key_file);
     } else if(params.genkey_mode) {
-        if(!CryptGenKey(hProv, CALG_ED25519, CRYPT_EXPORTABLE, &hPubKey))
-            handleError("Error during CryptKeyGen!");
-        printf("Key gen successfull");
+
+        if(CryptGetUserKey(hProv, AT_SIGNATURE, &hPubKey)) {
+            printf("A signature key is available.\n");
+        } else {
+            printf("No signature key is available.\n");
+
+            if(!(GetLastError() == (DWORD)NTE_NO_KEY)) 
+                handleError("An error other than NTE_NO_KEY getting signature key.\n");
+     
+            printf("The signature key does not exist.\n");
+            printf("Creating a signature key pair...\n"); 
+
+            if(!CryptGenKey(hProv, AT_SIGNATURE, 0, &hPubKey)) {
+                handleError("Error occurred creating a signature key.\n"); 
+            }
+            printf("Created a signature key pair.\n");
+        }
     }
 
     cleanUp();
