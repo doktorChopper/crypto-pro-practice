@@ -8,6 +8,7 @@
 #include <wchar.h>
 /*#include "WinCryptEx.h"*/
 #include "/opt/cprocsp/include/cpcsp/WinCryptEx.h"
+#include "app.h"
 
 /*#include "CSP_WinCrypt.h"*/
 #include "/opt/cprocsp/include/cpcsp/CSP_WinCrypt.h"
@@ -16,8 +17,6 @@
 /*#include "reader/tchar.h"*/
 #include "/opt/cprocsp/include/reader/tchar.h"
 
-/*#define CONTAINER _TEXT("\\\\.\\HDIMAGE\\TestKeyCon")*/
-/*#define CONTAINER _TEXT("\\\\.\\HDIMAGE\\CryptoSignToolCon")*/
 #define CONTAINER _TEXT("\\\\.\\HDIMAGE\\Curve")
 #define BUFSIZE 256
 
@@ -27,17 +26,19 @@ static HCRYPTKEY hPubKey = 0;
 static HCRYPTHASH hHash = 0;
 
 static BYTE *pbHash = NULL;
-static BYTE *pbSignature = NULL;
 
 static PCERT_PUBLIC_KEY_INFO pPubKeyInfo = NULL;
 
-static void handleError(const char *);
-static void cleanUp(void);
+// static void handleError(const char *); // функция обработки ошибок
+// static void cleanUp(void); // функция освобождения памяти, закрытия дескрипторов и контекста
+//
+// static void signData(const char *, const char *); // функция подписи данных
+// static void verifySignature(const char *, const char *, const char *); // функция проверки подписи
+// static void hashData(const char *); // хэширование данных (CALG_NO_HASH)
+// static void genKeyMode(); // функция генерации ключей ed25519
 
-static void signData(const char *, const char *);
-static void verifySignature(const char *, const char *, const char *);
-static void hashData(const char *);
-static void genKeyMode();
+
+// структура для парсинга параметров командной строки
 
 typedef struct {
     char * key_file;
@@ -57,10 +58,11 @@ void printHelp(void) {
             "Использование: \n"
             "   crypto-sign-tool [команда] [параметры]\n\n"
             "Команды: \n"
+            "   keygen      Генерирование ключей\n"
             "   sign        Создание подписи для файла\n"
             "   verify      Проверка подписи\n\n"
             "Параметры: \n"
-            "   -k, --key <файл>        Файл ключа (.key)\n"
+            "   -k, --key <файл>        Файл открытого ключа (.key)\n"
             "   -i, --in <файл>         Входной файл для подписи/проверки\n"
             "   -s, --signature <файл>  Файл с электронной подписью (только для verify)\n"
             "   -o, --out <файл>        Выходной файл\n\n"
@@ -84,18 +86,18 @@ int main(int argc, char * argv[]) {
     // Получение дескриптора криптопровайдера
     // Если не существует контейнера по заданному имени, то создается новый контейнер
 
-    /*if(CryptAcquireContext(&hProv, CONTAINER, "Crypto-Pro Curve25519 and AES KC1 CSP", PROV_EC_CURVE25519, 0)) {*/
-    if(CryptAcquireContext(&hProv, CONTAINER, NULL, PROV_GOST_2012_256, 0)) {
-    /*if(CryptAcquireContext(&hProv, CONTAINER, NULL, PROV_EC_CURVE25519, CRYPT_VERIFYCONTEXT)) {*/
+    if(CryptAcquireContext(&hProv, CONTAINER,  NULL, PROV_EC_CURVE25519, 0)) {
         printf("A cryptcontext with the %s key container has been acquired.\n", CONTAINER);
     } else {
-        if(!CryptAcquireContext(&hProv, CONTAINER, NULL, PROV_GOST_2012_256, CRYPT_NEWKEYSET))
+    	if(!CryptAcquireContext(&hProv, CONTAINER, NULL, PROV_EC_CURVE25519, CRYPT_NEWKEYSET)) 
             handleError("Could not create a new key container.");
         printf("A new key container has been created.\n");
     }
 
     LPSTR pszContainerName;
     DWORD dwContainerNameLen;
+
+    // получение имени контейнера
 
     if(!CryptGetProvParam(hProv, PP_CONTAINER, NULL, &dwContainerNameLen, 0))
         handleError("Error occurred getting the key container name.");
@@ -105,10 +107,11 @@ int main(int argc, char * argv[]) {
     if(!CryptGetProvParam(hProv, PP_CONTAINER, (LPBYTE)pszContainerName, &dwContainerNameLen, 0)) {
         free(pszContainerName);
         handleError("Error occurred getting the key container name.");
-    } else {
-        printf("A crypto context has been acquired and the name on the key container is %s\n\n", pszContainerName);
-        free(pszContainerName);
     }
+    printf("A crypto context has been acquired and the name on the key container is %s\n\n", pszContainerName);
+    free(pszContainerName);
+
+    // выбор функции по введенной команде
 
     if(params.sign_mode) {
         printf("Start signing data: %s\n", params.input_file);
@@ -127,8 +130,10 @@ int main(int argc, char * argv[]) {
 }
 
 // Функция генерации ключей
+// Так как задан провайдер PROV_EC_CURVE25519,
+// то будет использоваться алгоритм ed25519
 
-static void genKeyMode() {
+void genKeyMode() {
     if(CryptGetUserKey(hProv, AT_SIGNATURE, &hPubKey)) {
         printf("A signature key is available.\n");
     } else {
@@ -136,7 +141,6 @@ static void genKeyMode() {
 
         if(!(GetLastError() == (DWORD)NTE_NO_KEY)) 
             handleError("An error other than NTE_NO_KEY getting signature key.\n");
-        printf("The signature key does not exist.\n");
         printf("Creating a signature key pair...\n"); 
 
         // Генерация новой пары ключей
@@ -149,40 +153,40 @@ static void genKeyMode() {
 
 // Функция проверки подписи
 
-static void verifySignature(const char * sig, const char * fn, const char * pb) {
+void verifySignature(const char * sig, const char * fn, const char * pubK) {
 
-    FILE * pubKey;
+    FILE * pubkey;
     FILE * signature;
 
     DWORD dwSigLen;
     DWORD dwInfoLen;
-    DWORD cbHash = 0;
 
     BYTE *pbSignature = NULL;
 
-    if(!(pubKey = fopen(pb, "rb"))) {
-        fclose(pubKey);
-        char s[256];
-        snprintf(s, 256, "Problem opening the file %s", pb);
+    if(!(pubkey = fopen(pubK, "rb"))) {
+        char s[BUFSIZE];
+        snprintf(s, BUFSIZE, "Problem opening the file %s", pubK);
         handleError(s);
     }
     
-    fseek(pubKey, 0, SEEK_END);
-    dwInfoLen = ftell(pubKey);
-    fseek(pubKey, 0, SEEK_SET);
+    fseek(pubkey, 0, SEEK_END);
+    dwInfoLen = ftell(pubkey);
+    fseek(pubkey, 0, SEEK_SET);
 
     BYTE * data = (BYTE*) malloc(dwInfoLen);
 
     if(!data) {
-        fclose(pubKey);
+        fclose(pubkey);
         handleError("Out of memory.");
     }
 
-    fread(data, 1, dwInfoLen, pubKey);
-    fclose(pubKey);
+    fread(data, 1, dwInfoLen, pubkey);
+    fclose(pubkey);
 
     printf("%d\n", dwInfoLen);
     DWORD cbPubKeyInfo = 0;
+
+    // Декодирование объекта
 
     if(!CryptDecodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, data, dwInfoLen, CRYPT_DECODE_ALLOC_FLAG, NULL, &pPubKeyInfo, &cbPubKeyInfo)) {
         free(data);
@@ -191,17 +195,17 @@ static void verifySignature(const char * sig, const char * fn, const char * pb) 
 
     free(data);
 
-    if(!CryptImportPublicKeyInfo(hProv, X509_ASN_ENCODING, pPubKeyInfo, &hPubKey)) {
-        fclose(pubKey);
+    // Импортирование сведений об открытом ключе
+
+    if(!CryptImportPublicKeyInfo(hProv, X509_ASN_ENCODING, pPubKeyInfo, &hPubKey))
         handleError("Public key import failed!");
-    }
     printf("The key has been imported.\n");
 
     hashData(fn);
 
     if(!(signature = fopen(sig, "rb"))) {
-        char s[256];
-        snprintf(s, 256, "Problem opening the file %s", sig);
+        char s[BUFSIZE];
+        snprintf(s, BUFSIZE, "Problem opening the file %s", sig);
         handleError(s);
     }
 
@@ -214,6 +218,8 @@ static void verifySignature(const char * sig, const char * fn, const char * pb) 
     fread(pbSignature, 1, dwSigLen, signature);
     fclose(signature);
 
+    // Проверка подписи
+
     if(!CryptVerifySignature(hHash, pbSignature, dwSigLen, hPubKey, NULL, 0))
         handleError("Signature not validated!\n");
     printf("The signature has been verified!\n");
@@ -223,17 +229,18 @@ static void verifySignature(const char * sig, const char * fn, const char * pb) 
 
 // Функция подписи данных
 
-static void signData(const char * fn, const char * sig) {
+void signData(const char * fn, const char * sig) {
 
     FILE * signature;
-    FILE * pubKey;
+    FILE * pubkey;
+
+    BYTE * pbSignature = NULL;
 
     DWORD dwInfoLen;
     DWORD dwSigLen;
-    DWORD cbHash = 0;
 
     // Экспортирование сведений об открытом ключе в pPubKeyInfo
-
+    
     if(!CryptExportPublicKeyInfo(hProv, AT_SIGNATURE, X509_ASN_ENCODING, NULL, &dwInfoLen))
         handleError("Error during CryptExportPublicKeyInfo for signkey.");
     printf("Size of the CERT_PUBLIC_KEY_INFO determined.\n");
@@ -246,35 +253,35 @@ static void signData(const char * fn, const char * sig) {
         handleError("Error during CryptExportPublicKeyInfo for signkey.");
     printf("Contents have been written to the CERT_PUBLIC_KEY_INFO.\n");
 
-
     DWORD size = 0;
 
     // Кодирование структуры pPubKeyInfo
 
     if(!CryptEncodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, pPubKeyInfo, 0, NULL, NULL, &size)) {
-        fclose(pubKey);
+        fclose(pubkey);
         handleError("Error during CryptEncodeObjectEx.");
     }
 
-    BYTE * data = (BYTE*) malloc(size);
-    if(!data) {
+    BYTE * pbEncodeObj = (BYTE*) malloc(size);
+    if(!pbEncodeObj) {
         handleError("Out of memory.");
     }
 
-    if(!CryptEncodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, pPubKeyInfo, 0, NULL, data, &size)) {
-        free(data);
+    if(!CryptEncodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, pPubKeyInfo, 0, NULL, pbEncodeObj, &size)) {
+        free(pbEncodeObj);
         handleError("Error during CryptEncodeObjectEx.");
     }
 
     // Запись закодированных данных в файл pubkey.key
 
-    if(!(pubKey = fopen("pubkey.key", "w+b")))
+    if(!(pubkey = fopen("pubkey.key", "w+b")))
         handleError("Problem opening the file pubkey.key\n");
+    printf("The file %s was opened.\n", fn);
 
-    fwrite(data, 1, size, pubKey);
+    fwrite(pbEncodeObj, 1, size, pubkey);
 
-    fclose(pubKey);
-    free(data);
+    fclose(pubkey);
+    free(pbEncodeObj);
 
     // Вычисление хеш-значения от файла
 
@@ -295,28 +302,28 @@ static void signData(const char * fn, const char * sig) {
         handleError("error during CryptSignHash.");
     printf("pbSignature is the hash signature.\n");
 
-    // Создание файла с подписью
+    // Запись подписи в файл
 
-    if((signature = fopen(sig, "w+b"))) {
-        fwrite(pbSignature, 1, dwSigLen, signature);
-        fclose(signature);
-    } else {
+    if(!(signature = fopen(sig, "w+b"))) {
         char s[BUFSIZE];
         snprintf(s, BUFSIZE, "could not open file %s", sig);
         handleError(s);
     }
+
+    fwrite(pbSignature, 1, dwSigLen, signature);
+    fclose(signature);
 }
 
 // Функция хэширования данных
 
-static void hashData(const char * fn) {
+void hashData(const char * fn) {
 
     FILE * data;
 
     // Создание объекта хэширования
     // CryptCreateHash инициирует хэширование потока данных
 
-    if(!CryptCreateHash(hProv, CALG_SHA_512, 0, 0, &hHash))
+    if(!CryptCreateHash(hProv, CALG_NO_HASH, 0, 0, &hHash))
         handleError("error during CryptCreatedHash.");
     printf("Hash object created.\n");
 
@@ -344,19 +351,6 @@ static void hashData(const char * fn) {
     fclose(data);
 }
 
-static void cleanUp(void) {
-
-    free(pPubKeyInfo);
-    free(pbHash);
-    free(pbSignature);
-
-    if(hPubKey)
-        CryptDestroyKey(hPubKey);
-    if(hHash)
-        CryptDestroyHash(hHash);
-    if(hProv)
-        CryptReleaseContext(hProv, 0);
-}
 
 BOOL parse_args(int argc, char * argv[], progParams * params) {
 
@@ -373,7 +367,7 @@ BOOL parse_args(int argc, char * argv[], progParams * params) {
         params->sign_mode = TRUE;
     else if(strcmp(argv[1], "verify") == 0) 
         params->verify_mode = TRUE;
-    else if(strcmp(argv[1], "genkey") == 0)
+    else if(strcmp(argv[1], "keygen") == 0)
         params->genkey_mode = TRUE;
     else if(strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
         printHelp();
@@ -418,7 +412,20 @@ BOOL parse_args(int argc, char * argv[], progParams * params) {
 
 }
 
-static void handleError(const char *s) {
+void cleanUp(void) {
+
+    free(pPubKeyInfo);
+    free(pbHash);
+
+    if(hPubKey)
+        CryptDestroyKey(hPubKey);
+    if(hHash)
+        CryptDestroyHash(hHash);
+    if(hProv)
+        CryptReleaseContext(hProv, 0);
+}
+
+void handleError(const char *s) {
     DWORD err = GetLastError();
     printf("Error number     : 0x%x\n", err);
     printf("Error description: %s\n", s);

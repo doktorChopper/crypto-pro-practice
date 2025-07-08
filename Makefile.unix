@@ -1,0 +1,2 @@
+out=main
+include /opt/cprocsp/src/doxygen/examples.unix.mk
