@@ -25,7 +25,7 @@ void test_acquire_context_to_curve_container(void) {
 }
 
 void test_verify_pkcs11(void) {
-    TEST_ASSERT_TRUE(verifySignature("./data-test.sig", "./plain.txt", "./pubkey_test.der"));
+    TEST_ASSERT_TRUE(verifySignature("test-misc/data-test.sig", "test-misc/plain.txt", "test-misc/pubkey_test.der"));
 }
 
 int main(void) {
