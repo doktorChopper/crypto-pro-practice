@@ -1,5 +1,4 @@
 #include "Unity/src/unity.h"
-#include "Unity/src/unity_internals.h"
 #include "app.h"
 
 #include "/opt/cprocsp/include/cpcsp/WinCryptEx.h"
@@ -9,10 +8,13 @@
 #define CONTAINER _TEXT("\\\\.\\HDIMAGE\\Curve")
 #define BUFSIZE 256
 
+HCRYPTPROV hProv = 0;
+HCRYPTKEY hPubKey = 0;
+HCRYPTHASH hHash = 0;
 
-static HCRYPTPROV hProv = 0;
-static HCRYPTKEY hPubKey = 0;
-static HCRYPTHASH hHash = 0;
+BYTE *pbHash = NULL;
+
+PCERT_PUBLIC_KEY_INFO pPubKeyInfo = NULL;
 
 void setUp(void) {}
 
@@ -23,7 +25,7 @@ void test_acquire_context_to_curve_container(void) {
 }
 
 void test_verify_pkcs11(void) {
-
+    TEST_ASSERT_TRUE(verifySignature("./data-test.sig", "./plain.txt", "./pubkey_test.der"));
 }
 
 int main(void) {
@@ -37,7 +39,7 @@ int main(void) {
     }
 
     UNITY_BEGIN();
-    RUN_TEST(test_acquire_context_to_curve_container);
     RUN_TEST(test_verify_pkcs11);
+    RUN_TEST(test_acquire_context_to_curve_container);
     return UNITY_END();
 }
