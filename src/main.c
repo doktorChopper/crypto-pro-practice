@@ -1,4 +1,4 @@
-#include "app.h"
+#include "../include/app.h"
 
 #define CONTAINER _TEXT("\\\\.\\HDIMAGE\\Curve")
 

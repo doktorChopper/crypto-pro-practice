@@ -1,4 +1,4 @@
-#include "app.h"
+#include "../include/app.h"
 #include <stdio.h>
 
 extern HCRYPTPROV hProv;

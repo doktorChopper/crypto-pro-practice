@@ -1,5 +1,5 @@
-#include "Unity/src/unity.h"
-#include "app.h"
+#include "../Unity/src/unity.h"
+#include "../include/app.h"
 
 #include "/opt/cprocsp/include/cpcsp/WinCryptEx.h"
 #include "/opt/cprocsp/include/cpcsp/CSP_WinCrypt.h"
