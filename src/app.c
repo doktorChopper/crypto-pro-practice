@@ -9,7 +9,6 @@ extern BYTE *pbHash;
 
 extern PCERT_PUBLIC_KEY_INFO pPubKeyInfo;
 
-
 // Функция проверки подписи
 
 BOOL verifySignature(const char * sig, const char * fn, const char * pubK) {
@@ -48,8 +47,6 @@ BOOL verifySignature(const char * sig, const char * fn, const char * pubK) {
 
     dwKeyDerLen = fread(pbKeyDer, 1, szfile, pubkey);
 
-    printf("%d\n", szfile);
-
     fclose(pubkey);
 
     if(!CryptDecodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, pbKeyDer, dwKeyDerLen, CRYPT_DECODE_ALLOC_FLAG, NULL, &pPubKeyInfo, &dwPubKeyInfoSize)) {
@@ -63,15 +60,6 @@ BOOL verifySignature(const char * sig, const char * fn, const char * pubK) {
         handleError("Public key import failed!");
         return FALSE;
     }
-
-    // Импортирование сведений об открытом ключе
-    
-    // if(!CryptImportKey(hProv, pbKeyDer, dwKeyDerLen, 0, 0, &hPubKey)) {
-    //     free(pbKeyDer);
-    //     handleError("Public key import failed!");
-    //     return FALSE;
-    // }
-    // printf("The key has been imported.\n");
 
     free(pbKeyDer);
     hashData(fn);
@@ -102,6 +90,9 @@ BOOL verifySignature(const char * sig, const char * fn, const char * pubK) {
     }
     printf("The signature has been verified!\n");
     free(pbSignature);
+
+    // if(hPubKey)
+    //     CryptDestroyKey(hPubKey);
 
     return TRUE;
 }
