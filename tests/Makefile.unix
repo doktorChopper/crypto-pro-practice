@@ -1,2 +1,10 @@
 out=main
+
+PROJ_DIR = ~/crypto-pro-practice
+TEST_DIR = $(PROJ_DIR)/tests
+TOBJS=../src/app.o ../Unity/src/unity.o test_app.o
+
+test: $(TOBJS)
+	$(CPCCC) $(TOBJS) $(LDFLAGS) -o $@
+
 include /opt/cprocsp/src/doxygen/examples.unix.mk

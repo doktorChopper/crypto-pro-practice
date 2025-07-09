@@ -97,13 +97,16 @@ int main(int argc, char * argv[]) {
 
     if(params.sign_mode) {
         printf("Start signing data: %s\n", params.input_file);
-        signData(params.input_file, params.output_file);
+        if(!signData(params.input_file, params.output_file))
+            exit(1);
     } else if(params.verify_mode) {
         printf("Start verify signature\n");
-        verifySignature(params.signature_file, params.input_file, params.key_file);
+        if(!verifySignature(params.signature_file, params.input_file, params.key_file))
+            exit(1);
     } else if(params.genkey_mode) {
         printf("Start genkey\n");
-        genKeyMode();
+        if(!genKeyMode())
+            exit(1);
     }
 
     cleanUp();
