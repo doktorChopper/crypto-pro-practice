@@ -19,12 +19,12 @@
 
 #define BUFSIZE 256
 
-void handleError(const char *); // функция обработки ошибок
-void cleanUp(void); // функция освобождения памяти, закрытия дескрипторов и контекста
+void handleError(HCRYPTPROV, const char *); // функция обработки ошибок
+void cleanUp(HCRYPTPROV); // функция освобождения памяти, закрытия дескрипторов и контекста
 
-BOOL signData(const char *, const char *); // функция подписи данных
-BOOL verifySignature(const char *, const char *, const char *); // функция проверки подписи
-void hashData(const char *); // хэширование данных (CALG_NO_HASH)
-BOOL genKeyMode(); // функция генерации ключей ed25519
+BOOL signData(HCRYPTPROV, const char *, const char *); // функция подписи данных
+BOOL verifySignature(HCRYPTPROV, const char *, const char *, const char *); // функция проверки подписи
+void hashData(HCRYPTPROV, HCRYPTHASH *, const char *); // хэширование данных (CALG_NO_HASH)
+BOOL genKeyMode(HCRYPTPROV); // функция генерации ключей ed25519
 
 #endif // _APP_H_

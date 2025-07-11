@@ -9,13 +9,8 @@
 #define CONTAINER _TEXT("\\\\.\\HDIMAGE\\Curve")
 #define BUFSIZE 256
 
-HCRYPTPROV hProv = 0;
 HCRYPTKEY hPubKey = 0;
 HCRYPTHASH hHash = 0;
-
-BYTE *pbHash = NULL;
-
-PCERT_PUBLIC_KEY_INFO pPubKeyInfo = NULL;
 
 void setUp(void) {}
 
@@ -23,61 +18,54 @@ void tearDown(void) {}
 
 void test_verify_from_pkcs11(void) {
 
+    HCRYPTPROV hProv = 0;
+
     printf("\n\n\033[32mSTART TEST: test_verify_from_pkcs11\033[0m\n\n");
     printf("\033[32mtest_verify_from_pkcs11: TEST 1\033[0m\n\n");
 
 
-
     // верификация на верных данных
-    if(CryptAcquireContext(&hProv, CONTAINER,  NULL, PROV_EC_CURVE25519, 0))
-        printf("A cryptcontext with the %s key container has been acquired.\n", CONTAINER);
-    TEST_ASSERT_TRUE(verifySignature("test-misc/data-test.sig", "test-misc/plain.txt", "test-misc/pubkey_test_id_05.der"));
-    cleanUp();
-
+    if(CryptAcquireContext(&hProv, NULL,  NULL, PROV_EC_CURVE25519, CRYPT_VERIFYCONTEXT))
+        printf("A cryptcontext with the %s key container has been acquired.\n", "CRYPT_VERIFYCONTEXT");
+    TEST_ASSERT_TRUE(verifySignature(hProv, "test-misc/data-test.sig", "test-misc/plain.txt", "test-misc/pubkey_test_id_05.der"));
 
 
     printf("\n\033[32mtest_verify_from_pkcs11: TEST 2\033[0m\n\n");
-    
 
 
     // верификация на неверных или модифицированных данных
-    if(CryptAcquireContext(&hProv, CONTAINER,  NULL, PROV_EC_CURVE25519, 0))
-        printf("A cryptcontext with the %s key container has been acquired.\n", CONTAINER);
-    TEST_ASSERT_FALSE(verifySignature("test-misc/data-test.sig", "test-misc/wrong-plain.txt", "test-misc/pubkey_test_id_05.der"));
-
+    TEST_ASSERT_FALSE(verifySignature(hProv, "test-misc/data-test.sig", "test-misc/wrong-plain.txt", "test-misc/pubkey_test_id_05.der"));
 
 
     printf("\033[32mtest_verify_from_pkcs11: TEST 3\033[0m\n\n");
 
 
-
     // использование неверного ключа, сгенерированного через pkcs11-tool
-    if(CryptAcquireContext(&hProv, CONTAINER,  NULL, PROV_EC_CURVE25519, 0))
-        printf("A cryptcontext with the %s key container has been acquired.\n", CONTAINER);
-    TEST_ASSERT_FALSE(verifySignature("test-misc/data-test.sig", "test-misc/plain.txt", "test-misc/pubkey_wrong_test_id_06.der"));
-
+    TEST_ASSERT_FALSE(verifySignature(hProv, "test-misc/data-test.sig", "test-misc/plain.txt", "test-misc/pubkey_wrong_test_id_06.der"));
 
 
     printf("\033[32mtest_verify_from_pkcs11: TEST 4\033[0m\n\n");
 
 
-
     // проверка на модифицированной подписи
-    if(CryptAcquireContext(&hProv, CONTAINER,  NULL, PROV_EC_CURVE25519, 0))
-        printf("A cryptcontext with the %s key container has been acquired.\n", CONTAINER);
-    TEST_ASSERT_FALSE(verifySignature("test-misc/modified.sig", "test-misc/plain.txt", "test-misc/pubkey_test_id_05.der"));
-
+    TEST_ASSERT_FALSE(verifySignature(hProv, "test-misc/modified.sig", "test-misc/plain.txt", "test-misc/pubkey_test_id_05.der"));
 
 
     printf("\033[32mtest_verify_from_pkcs11: TEST 5\033[0m\n\n");
 
 
+    // проверка на пустых данных с "верным" ключом
+    TEST_ASSERT_TRUE(verifySignature(hProv, "test-misc/empty.sig", "test-misc/empty.txt", "test-misc/pubkey_test_id_05.der"));
+    cleanUp(hProv);
 
-    // проверка на пустых данных
-    if(CryptAcquireContext(&hProv, CONTAINER,  NULL, PROV_EC_CURVE25519, 0))
-        printf("A cryptcontext with the %s key container has been acquired.\n", CONTAINER);
-    TEST_ASSERT_TRUE(verifySignature("test-misc/empty.sig", "test-misc/empty.txt", "test-misc/pubkey_test_id_05.der"));
-    cleanUp();
+
+    printf("\033[32mtest_verify_from_pkcs11: TEST 6\033[0m\n\n");
+
+
+    // проверка на пустых данных с "неверным" ключом
+    TEST_ASSERT_FALSE(verifySignature(hProv, "test-misc/empty.sig", "test-misc/empty.txt", "test-misc/pubkey_wrong_test_id_06.der"));
+
+    cleanUp(hProv);
 
     printf("\n\033[32mEND TEST: test_verify_from_pkcs11\033[0m\n\n");
 }

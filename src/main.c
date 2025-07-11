@@ -3,13 +3,8 @@
 #define CONTAINER _TEXT("\\\\.\\HDIMAGE\\Curve")
 
 
-HCRYPTPROV hProv = 0;
 HCRYPTKEY hPubKey = 0;
 HCRYPTHASH hHash = 0;
-
-BYTE *pbHash = NULL;
-
-PCERT_PUBLIC_KEY_INFO pPubKeyInfo = NULL;
 
 // static void handleError(const char *); // функция обработки ошибок
 // static void cleanUp(void); // функция освобождения памяти, закрытия дескрипторов и контекста
@@ -56,6 +51,7 @@ void printHelp(void) {
 
 int main(int argc, char * argv[]) {
 
+    HCRYPTPROV hProv = 0;
     progParams params; 
 
     // Парсинг команд и параметров
@@ -72,7 +68,7 @@ int main(int argc, char * argv[]) {
         printf("A cryptcontext with the %s key container has been acquired.\n", CONTAINER);
     } else {
     	if(!CryptAcquireContext(&hProv, CONTAINER, NULL, PROV_EC_CURVE25519, CRYPT_NEWKEYSET)) 
-            handleError("Could not create a new key container.");
+            handleError(hProv, "Could not create a new key container.");
         printf("A new key container has been created.\n");
     }
 
@@ -82,13 +78,13 @@ int main(int argc, char * argv[]) {
     // получение имени контейнера
 
     if(!CryptGetProvParam(hProv, PP_CONTAINER, NULL, &dwContainerNameLen, 0))
-        handleError("Error occurred getting the key container name.");
+        handleError(hProv, "Error occurred getting the key container name.");
 
     pszContainerName = (char *)malloc((dwContainerNameLen + 1));
 
     if(!CryptGetProvParam(hProv, PP_CONTAINER, (LPBYTE)pszContainerName, &dwContainerNameLen, 0)) {
         free(pszContainerName);
-        handleError("Error occurred getting the key container name.");
+        handleError(hProv, "Error occurred getting the key container name.");
     }
     printf("A crypto context has been acquired and the name on the key container is %s\n\n", pszContainerName);
     free(pszContainerName);
@@ -97,19 +93,19 @@ int main(int argc, char * argv[]) {
 
     if(params.sign_mode) {
         printf("Start signing data: %s\n", params.input_file);
-        if(!signData(params.input_file, params.output_file))
+        if(!signData(hProv, params.input_file, params.output_file))
             exit(1);
     } else if(params.verify_mode) {
         printf("Start verify signature\n");
-        if(!verifySignature(params.signature_file, params.input_file, params.key_file))
+        if(!verifySignature(hProv, params.signature_file, params.input_file, params.key_file))
             exit(1);
     } else if(params.genkey_mode) {
         printf("Start genkey\n");
-        if(!genKeyMode())
+        if(!genKeyMode(hProv))
             exit(1);
     }
 
-    cleanUp();
+    cleanUp(hProv);
 
     return 0;
 }
