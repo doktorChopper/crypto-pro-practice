@@ -42,14 +42,11 @@ BOOL verifySignature(HCRYPTPROV hProv, const char * sig, const char * fn, const 
     pbKeyDer = (BYTE*) malloc(szfile);
 
     if(!pbKeyDer) {
-        fclose(pubkey);
         handleError(hProv, "Out of memory.");
         goto done;
     }
 
     dwKeyDerLen = fread(pbKeyDer, 1, szfile, pubkey);
-
-    fclose(pubkey);
 
     if(!CryptDecodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, pbKeyDer, dwKeyDerLen, CRYPT_DECODE_ALLOC_FLAG, NULL, &pPubKeyInfo, &dwPubKeyInfoSize)) {
         handleError(hProv, "Error during CryptDecodeObject.");
@@ -57,8 +54,6 @@ BOOL verifySignature(HCRYPTPROV hProv, const char * sig, const char * fn, const 
     } 
 
     if(!CryptImportPublicKeyInfo(hProv, X509_ASN_ENCODING, pPubKeyInfo, &hPubKey)) {
-        if(hPubKey)
-            CryptDestroyKey(hPubKey);
         handleError(hProv, "Public key import failed!");
         goto done;
     }
@@ -66,10 +61,6 @@ BOOL verifySignature(HCRYPTPROV hProv, const char * sig, const char * fn, const 
     hashData(hProv, &hHash, fn);
 
     if(!(signature = fopen(sig, "r+b"))) {
-        if(hHash)
-            CryptDestroyHash(hHash);
-        if(hPubKey)
-            CryptDestroyKey(hPubKey);
         char s[BUFSIZE];
         snprintf(s, BUFSIZE, "Problem opening the file %s", sig);
         handleError(hProv, s);
@@ -83,26 +74,17 @@ BOOL verifySignature(HCRYPTPROV hProv, const char * sig, const char * fn, const 
     pbSignature = (BYTE*) malloc(dwSigLen);
 
     dwTmpLen = fread(pbSignature, 1, dwSigLen, signature);
-    fclose(signature);
 
     // Проверка подписи
 
     if(!CryptVerifySignature(hHash, pbSignature, dwTmpLen, hPubKey, NULL, 0)) {
-        if(hPubKey)
-            CryptDestroyKey(hPubKey);
-        if(hHash)
-            CryptDestroyHash(hHash);
         handleError(hProv, "Signature not validated!\n");
         goto done;
     }
     printf("The signature has been verified!\n");
 
-    if(hPubKey)
-        CryptDestroyKey(hPubKey);
-    if(hHash)
-        CryptDestroyHash(hHash);
-
     result = TRUE;
+
     done:
     if(pbKeyDer)
         free(pbKeyDer);
@@ -110,6 +92,16 @@ BOOL verifySignature(HCRYPTPROV hProv, const char * sig, const char * fn, const 
         free(pbSignature);
     if(pPubKeyInfo)
         LocalFree(pPubKeyInfo);
+
+    if(hPubKey)
+        CryptDestroyKey(hPubKey);
+    if(hHash)
+        CryptDestroyHash(hHash);
+    if(pubkey)
+        fclose(pubkey);
+    if(signature)
+        fclose(signature);
+
     return result;
 }
 
@@ -121,34 +113,33 @@ BOOL genKeyMode(HCRYPTPROV hProv) {
 
     HCRYPTKEY hPubKey = 0;
 
+    BOOL result = FALSE;
+
     if(CryptGetUserKey(hProv, AT_SIGNATURE, &hPubKey)) {
-        if(hPubKey)
-            CryptDestroyKey(hPubKey);
         printf("A signature key is available.\n");
-        return TRUE;
+        result = TRUE;
+        goto done;
     }
     printf("No signature key is available.\n");
 
     if(!(GetLastError() == (DWORD)NTE_NO_KEY)) {
-        if(hPubKey)
-            CryptDestroyKey(hPubKey);
         handleError(hProv, "An error other than NTE_NO_KEY getting signature key.\n");
-        return FALSE;
+        goto done;
     }
     printf("Creating a signature key pair...\n"); 
 
     // Генерация новой пары ключей
 
     if(!CryptGenKey(hProv, AT_SIGNATURE, 0, &hPubKey)) {
-        if(hPubKey)
-            CryptDestroyKey(hPubKey);
         handleError(hProv, "Error occurred creating a signature key.\n"); 
-        return FALSE;
+        goto done;
     }
     printf("Created a signature key pair.\n");
+
+    done:
     if(hPubKey)
         CryptDestroyKey(hPubKey);
-    return FALSE;
+    return result;
 }
 
 
@@ -156,72 +147,70 @@ BOOL genKeyMode(HCRYPTPROV hProv) {
 
 BOOL signData(HCRYPTPROV hProv, const char * fn, const char * sig) {
 
-    FILE * signature;
-    FILE * pubkey;
+    FILE * signature = NULL;
+    FILE * pubkey = NULL;
 
     BYTE * pbSignature = NULL;
+    BYTE * pbEncodeObj = NULL;
 
     DWORD dwInfoLen;
     DWORD dwSigLen;
+    DWORD size = 0;
 
     PCERT_PUBLIC_KEY_INFO pPubKeyInfo = NULL;
 
     HCRYPTHASH hHash = 0;
 
+    BOOL result = FALSE;
+
     // Экспортирование сведений об открытом ключе в pPubKeyInfo
     
     if(!CryptExportPublicKeyInfo(hProv, AT_SIGNATURE, X509_ASN_ENCODING, NULL, &dwInfoLen)) {
         handleError(hProv, "Error during CryptExportPublicKeyInfo for signkey.");
-        return FALSE;
+        goto done;
     }
     printf("Size of the CERT_PUBLIC_KEY_INFO determined.\n");
 
     pPubKeyInfo = (PCERT_PUBLIC_KEY_INFO) malloc(dwInfoLen);
     if(!pPubKeyInfo) {
         handleError(hProv, "Out of memory.\n");
-        return FALSE;
+        goto done;
     }
 
     if(!CryptExportPublicKeyInfo(hProv, AT_SIGNATURE, X509_ASN_ENCODING, pPubKeyInfo, &dwInfoLen)) {
         handleError(hProv, "Error during CryptExportPublicKeyInfo for signkey.");
-        return FALSE;
+        goto done;
     }
     printf("Contents have been written to the CERT_PUBLIC_KEY_INFO.\n");
 
-    DWORD size = 0;
 
     // Кодирование структуры pPubKeyInfo
 
     if(!CryptEncodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, pPubKeyInfo, 0, NULL, NULL, &size)) {
         handleError(hProv, "Error during CryptEncodeObjectEx.");
-        return FALSE;
+        goto done;
     }
 
-    BYTE * pbEncodeObj = (BYTE*) malloc(size);
+    pbEncodeObj = (BYTE*) malloc(size);
     if(!pbEncodeObj) {
         handleError(hProv, "Out of memory.");
-        return FALSE;
+        goto done;
     }
 
     if(!CryptEncodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, pPubKeyInfo, 0, NULL, pbEncodeObj, &size)) {
-        free(pbEncodeObj);
         handleError(hProv, "Error during CryptEncodeObjectEx.");
-        return FALSE;
+        goto done;
     }
 
     // Запись закодированных данных в файл pubkey.key
 
     if(!(pubkey = fopen("pubkey.key", "w+b"))) {
-        free(pbEncodeObj);
         handleError(hProv, "Problem opening the file pubkey.key\n");
-        return FALSE;
+        goto done;
     }
     printf("The file %s was opened.\n", fn);
 
     fwrite(pbEncodeObj, 1, size, pubkey);
-
-    fclose(pubkey);
-    free(pbEncodeObj);
 
     // Вычисление хеш-значения от файла
 
@@ -232,38 +221,48 @@ BOOL signData(HCRYPTPROV hProv, const char * fn, const char * sig) {
     dwSigLen = 0;
     if(!CryptSignHash(hHash, AT_SIGNATURE, NULL, 0, NULL, &dwSigLen)) {
         handleError(hProv, "error during CryptSignHash");
-        return FALSE;
+        goto done;
     }
     printf("Signature lenght %d found.\n", dwSigLen);
 
     pbSignature = (BYTE*) malloc(dwSigLen);
     if(!pbSignature) {
         handleError(hProv, "out of memory.");
-        return FALSE;
+        goto done;
     }
 
     if(!CryptSignHash(hHash, AT_SIGNATURE, NULL, 0, pbSignature, &dwSigLen)) {
-        free(pbSignature);
         handleError(hProv, "error during CryptSignHash.");
-        return FALSE;
+        goto done;
     }
     printf("pbSignature is the hash signature.\n");
 
     // Запись подписи в файл
 
     if(!(signature = fopen(sig, "w+b"))) {
-        free(pbSignature);
         char s[BUFSIZE];
         snprintf(s, BUFSIZE, "could not open file %s", sig);
         handleError(hProv, s);
-        return FALSE;
+        goto done;
     }
-
     fwrite(pbSignature, 1, dwSigLen, signature);
-    fclose(signature);
-    free(pbSignature);
 
-    return TRUE;
+    result = TRUE;
+    done:
+    if(pbSignature)
+        free(pbSignature);
+    if(pbEncodeObj)
+        free(pbEncodeObj);
+    if(pPubKeyInfo)
+        free(pPubKeyInfo);
+    if(hHash)
+        CryptDestroyHash(hHash);
+
+    if(pubkey)
+        fclose(pubkey);
+    if(signature)
+        fclose(signature);
+    return result;
 }
 
 // Функция хэширования данных

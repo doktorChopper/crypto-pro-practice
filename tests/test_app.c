@@ -23,47 +23,58 @@ void test_verify_from_pkcs11(void) {
     printf("\n\n\033[32mSTART TEST: test_verify_from_pkcs11\033[0m\n\n");
     printf("\033[32mtest_verify_from_pkcs11: TEST 1\033[0m\n\n");
 
-
     // верификация на верных данных
     if(CryptAcquireContext(&hProv, NULL,  NULL, PROV_EC_CURVE25519, CRYPT_VERIFYCONTEXT))
         printf("A cryptcontext with the %s key container has been acquired.\n", "CRYPT_VERIFYCONTEXT");
-    TEST_ASSERT_TRUE(verifySignature(hProv, "test-misc/data-test.sig", "test-misc/plain.txt", "test-misc/pubkey_test_id_05.der"));
+
+    TEST_ASSERT_TRUE(verifySignature(hProv, "test-misc/sign-05.sig", "test-misc/plain-05.txt", "test-misc/pubkey_test_id_05.der"));
 
 
     printf("\n\033[32mtest_verify_from_pkcs11: TEST 2\033[0m\n\n");
 
 
     // верификация на неверных или модифицированных данных
-    TEST_ASSERT_FALSE(verifySignature(hProv, "test-misc/data-test.sig", "test-misc/wrong-plain.txt", "test-misc/pubkey_test_id_05.der"));
+    TEST_ASSERT_FALSE(verifySignature(hProv, "test-misc/sign-05.sig", "test-misc/plain-06.txt", "test-misc/pubkey_test_id_05.der"));
 
 
     printf("\033[32mtest_verify_from_pkcs11: TEST 3\033[0m\n\n");
 
 
     // использование неверного ключа, сгенерированного через pkcs11-tool
-    TEST_ASSERT_FALSE(verifySignature(hProv, "test-misc/data-test.sig", "test-misc/plain.txt", "test-misc/pubkey_wrong_test_id_06.der"));
+    TEST_ASSERT_FALSE(verifySignature(hProv, "test-misc/sign-05.sig", "test-misc/plain-05.txt", "test-misc/pubkey_wrong_test_id_06.der"));
 
 
     printf("\033[32mtest_verify_from_pkcs11: TEST 4\033[0m\n\n");
 
 
     // проверка на модифицированной подписи
-    TEST_ASSERT_FALSE(verifySignature(hProv, "test-misc/modified.sig", "test-misc/plain.txt", "test-misc/pubkey_test_id_05.der"));
+    TEST_ASSERT_FALSE(verifySignature(hProv, "test-misc/sign-modified-05.sig", "test-misc/plain-05.txt", "test-misc/pubkey_test_id_05.der"));
 
 
     printf("\033[32mtest_verify_from_pkcs11: TEST 5\033[0m\n\n");
 
 
     // проверка на пустых данных с "верным" ключом
-    TEST_ASSERT_TRUE(verifySignature(hProv, "test-misc/empty.sig", "test-misc/empty.txt", "test-misc/pubkey_test_id_05.der"));
-    cleanUp(hProv);
+    TEST_ASSERT_TRUE(verifySignature(hProv, "test-misc/sign-empty-05.sig", "test-misc/empty.txt", "test-misc/pubkey_test_id_05.der"));
 
 
     printf("\033[32mtest_verify_from_pkcs11: TEST 6\033[0m\n\n");
 
 
     // проверка на пустых данных с "неверным" ключом
-    TEST_ASSERT_FALSE(verifySignature(hProv, "test-misc/empty.sig", "test-misc/empty.txt", "test-misc/pubkey_wrong_test_id_06.der"));
+    TEST_ASSERT_FALSE(verifySignature(hProv, "test-misc/sign-empty-05.sig", "test-misc/empty.txt", "test-misc/pubkey_wrong_test_id_06.der"));
+
+
+    printf("\033[32mtest_verify_from_pkcs11: TEST 7\033[0m\n\n");
+
+
+    TEST_ASSERT_TRUE(verifySignature(hProv, "test-misc/empty-06.sig", "test-misc/empty.txt", "test-misc/pubkey_wrong_test_id_06.der"));
+
+
+    printf("\033[32mtest_verify_from_pkcs11: TEST 8\033[0m\n\n");
+
+
+    TEST_ASSERT_TRUE(verifySignature(hProv, "test-misc/sign-06.sig", "test-misc/plain-06.txt", "test-misc/pubkey_wrong_test_id_06.der"));
 
     cleanUp(hProv);
 
