@@ -176,7 +176,10 @@ BOOL signData(HCRYPTPROV hProv, const char * fn, const char * sig) {
 BOOL deleteContainer(HCRYPTPROV hProv, const char * cont_name) {
 
     if(!CryptAcquireContext(&hProv, cont_name,  NULL, PROV_EC_CURVE25519, CRYPT_DELETEKEYSET)) {
-        handleError(hProv, "Error occured deleating a container.\n");
+        if(GetLastError() == (DWORD) NTE_BAD_KEYSET)
+            printf("container %s does not exist\n", cont_name);
+        else
+            handleError(hProv, "Error occured deleating a container.\n");
         return FALSE;
     }
     printf("delete %s container.\n", cont_name);
@@ -187,13 +190,13 @@ BOOL deleteContainer(HCRYPTPROV hProv, const char * cont_name) {
 // Так как задан провайдер PROV_EC_CURVE25519,
 // то будет использоваться алгоритм ed25519
 
-BOOL genKeyMode(HCRYPTPROV hProv) {
+BOOL keyGenMode(HCRYPTPROV hProv) {
 
-    HCRYPTKEY hPubKey = 0;
+    HCRYPTKEY hKey = 0;
 
     BOOL result = FALSE;
 
-    if(CryptGetUserKey(hProv, AT_SIGNATURE, &hPubKey)) {
+    if(CryptGetUserKey(hProv, AT_SIGNATURE, &hKey)) {
         printf("A signature key is available.\n");
         result = TRUE;
         goto done;
@@ -208,16 +211,16 @@ BOOL genKeyMode(HCRYPTPROV hProv) {
 
     // Генерация новой пары ключей
 
-    if(!CryptGenKey(hProv, AT_SIGNATURE, 0, &hPubKey)) {
+    if(!CryptGenKey(hProv, AT_SIGNATURE, 0, &hKey)) {
         handleError(hProv, "Error occurred creating a signature key.\n"); 
         goto done;
     }
     printf("Created a signature key pair.\n");
 
-
+    result = TRUE;
     done:
-    if(hPubKey)
-        CryptDestroyKey(hPubKey);
+    if(hKey)
+        CryptDestroyKey(hKey);
 
     return result;
 }

@@ -25,7 +25,7 @@ void cleanUp(HCRYPTPROV); // функция освобождения памят�
 BOOL signData(HCRYPTPROV, const char *, const char *); // функция подписи данных
 BOOL verifySignature(HCRYPTPROV, const char *, const char *, const char *); // функция проверки подписи
 void hashData(HCRYPTPROV, HCRYPTHASH *, const char *); // хэширование данных (CALG_NO_HASH)
-BOOL genKeyMode(HCRYPTPROV); // функция генерации ключей ed25519
+BOOL keyGenMode(HCRYPTPROV); // функция генерации ключей ed25519
 BOOL getPubKey(HCRYPTPROV, const char *);
 BOOL deleteContainer(HCRYPTPROV, const char *);
 

@@ -97,7 +97,7 @@ int main(int argc, char * argv[]) {
             exit(1);
     } else if(params.genkey_mode) {
         printf("Start genkey\n");
-        if(!genKeyMode(hProv))
+        if(!keyGenMode(hProv))
             exit(1);
     } else if(params.getkey_mode) {
         printf("Start export publickey\n");
