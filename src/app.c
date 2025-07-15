@@ -152,14 +152,17 @@ BOOL signData(HCRYPTPROV hProv, const char * fn, const char * sig) {
 
     BYTE * pbSignature = NULL;
     BYTE * pbEncodeObj = NULL;
+    // LPBYTE * ppbKeyBlob = NULL;
 
     DWORD dwInfoLen;
     DWORD dwSigLen;
+    DWORD dwBlobLen;
     DWORD size = 0;
 
     PCERT_PUBLIC_KEY_INFO pPubKeyInfo = NULL;
 
     HCRYPTHASH hHash = 0;
+    // HCRYPTKEY hPubKey = 0;
 
     BOOL result = FALSE;
 
