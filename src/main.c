@@ -45,7 +45,8 @@ void printHelp(void) {
             "   -o, --out <файл>        Выходной файл\n\n"
             "Примеры использования:\n"
             "   crypto-sign-tool sign --in <file.txt> --out <signature.sig>\n"
-            "   crypto-sign-tool verify -s <signature.sig> -i <file.txt> -k <pubkey.key>\n\n");
+            "   crypto-sign-tool verify -s <signature.sig> -i <file.txt> -k <pubkey.key>\n"
+            "   crypto-sign-tool keygen -k <pubkey.key>\n\n");
 }
 
 
@@ -101,7 +102,7 @@ int main(int argc, char * argv[]) {
             exit(1);
     } else if(params.genkey_mode) {
         printf("Start genkey\n");
-        if(!genKeyMode(hProv))
+        if(!genKeyMode(hProv, params.key_file))
             exit(1);
     }
 

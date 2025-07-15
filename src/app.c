@@ -109,9 +109,18 @@ BOOL verifySignature(HCRYPTPROV hProv, const char * sig, const char * fn, const 
 // Так как задан провайдер PROV_EC_CURVE25519,
 // то будет использоваться алгоритм ed25519
 
-BOOL genKeyMode(HCRYPTPROV hProv) {
+BOOL genKeyMode(HCRYPTPROV hProv, const char * key_fname) {
 
     HCRYPTKEY hPubKey = 0;
+
+    DWORD dwInfoLen;
+    DWORD size = 0;
+
+    BYTE * pbEncodeObj = NULL;
+
+    PCERT_PUBLIC_KEY_INFO pPubKeyInfo = NULL;
+
+    FILE * pubkey = NULL;
 
     BOOL result = FALSE;
 
@@ -135,36 +144,6 @@ BOOL genKeyMode(HCRYPTPROV hProv) {
         goto done;
     }
     printf("Created a signature key pair.\n");
-
-    done:
-    if(hPubKey)
-        CryptDestroyKey(hPubKey);
-    return result;
-}
-
-
-// Функция подписи данных
-
-BOOL signData(HCRYPTPROV hProv, const char * fn, const char * sig) {
-
-    FILE * signature = NULL;
-    FILE * pubkey = NULL;
-
-    BYTE * pbSignature = NULL;
-    BYTE * pbEncodeObj = NULL;
-    // LPBYTE * ppbKeyBlob = NULL;
-
-    DWORD dwInfoLen;
-    DWORD dwSigLen;
-    DWORD dwBlobLen;
-    DWORD size = 0;
-
-    PCERT_PUBLIC_KEY_INFO pPubKeyInfo = NULL;
-
-    HCRYPTHASH hHash = 0;
-    // HCRYPTKEY hPubKey = 0;
-
-    BOOL result = FALSE;
 
     // Экспортирование сведений об открытом ключе в pPubKeyInfo
     
@@ -207,13 +186,46 @@ BOOL signData(HCRYPTPROV hProv, const char * fn, const char * sig) {
 
     // Запись закодированных данных в файл pubkey.key
 
-    if(!(pubkey = fopen("pubkey.key", "w+b"))) {
-        handleError(hProv, "Problem opening the file pubkey.key\n");
+    if(!(pubkey = fopen(key_fname, "w+b"))) {
+        char s[BUFSIZE];
+        snprintf(s, BUFSIZE, "Problem opening the file %s\n", key_fname);
+        handleError(hProv, s);
         goto done;
     }
-    printf("The file %s was opened.\n", fn);
-
     fwrite(pbEncodeObj, 1, size, pubkey);
+
+    done:
+    if(hPubKey)
+        CryptDestroyKey(hPubKey);
+
+    if(pbEncodeObj)
+        free(pbEncodeObj);
+    if(pPubKeyInfo)
+        free(pPubKeyInfo);
+
+    if(pubkey)
+        fclose(pubkey);
+    return result;
+}
+
+
+// Функция подписи данных
+
+BOOL signData(HCRYPTPROV hProv, const char * fn, const char * sig) {
+
+    FILE * signature = NULL;
+
+    BYTE * pbSignature = NULL;
+    // LPBYTE * ppbKeyBlob = NULL;
+
+    DWORD dwSigLen;
+    DWORD dwBlobLen;
+
+    HCRYPTHASH hHash = 0;
+    // HCRYPTKEY hPubKey = 0;
+
+    BOOL result = FALSE;
+
 
     // Вычисление хеш-значения от файла
 
@@ -254,15 +266,9 @@ BOOL signData(HCRYPTPROV hProv, const char * fn, const char * sig) {
     done:
     if(pbSignature)
         free(pbSignature);
-    if(pbEncodeObj)
-        free(pbEncodeObj);
-    if(pPubKeyInfo)
-        free(pPubKeyInfo);
     if(hHash)
         CryptDestroyHash(hHash);
 
-    if(pubkey)
-        fclose(pubkey);
     if(signature)
         fclose(signature);
     return result;
