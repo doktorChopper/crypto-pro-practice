@@ -105,109 +105,6 @@ BOOL verifySignature(HCRYPTPROV hProv, const char * sig, const char * fn, const 
     return result;
 }
 
-// Функция генерации ключей
-// Так как задан провайдер PROV_EC_CURVE25519,
-// то будет использоваться алгоритм ed25519
-
-BOOL genKeyMode(HCRYPTPROV hProv, const char * key_fname) {
-
-    HCRYPTKEY hPubKey = 0;
-
-    DWORD dwInfoLen;
-    DWORD size = 0;
-
-    BYTE * pbEncodeObj = NULL;
-
-    PCERT_PUBLIC_KEY_INFO pPubKeyInfo = NULL;
-
-    FILE * pubkey = NULL;
-
-    BOOL result = FALSE;
-
-    if(CryptGetUserKey(hProv, AT_SIGNATURE, &hPubKey)) {
-        printf("A signature key is available.\n");
-        result = TRUE;
-        goto done;
-    }
-    printf("No signature key is available.\n");
-
-    if(!(GetLastError() == (DWORD)NTE_NO_KEY)) {
-        handleError(hProv, "An error other than NTE_NO_KEY getting signature key.\n");
-        goto done;
-    }
-    printf("Creating a signature key pair...\n"); 
-
-    // Генерация новой пары ключей
-
-    if(!CryptGenKey(hProv, AT_SIGNATURE, 0, &hPubKey)) {
-        handleError(hProv, "Error occurred creating a signature key.\n"); 
-        goto done;
-    }
-    printf("Created a signature key pair.\n");
-
-    // Экспортирование сведений об открытом ключе в pPubKeyInfo
-    
-    if(!CryptExportPublicKeyInfo(hProv, AT_SIGNATURE, X509_ASN_ENCODING, NULL, &dwInfoLen)) {
-        handleError(hProv, "Error during CryptExportPublicKeyInfo for signkey.");
-        goto done;
-    }
-    printf("Size of the CERT_PUBLIC_KEY_INFO determined.\n");
-
-    pPubKeyInfo = (PCERT_PUBLIC_KEY_INFO) malloc(dwInfoLen);
-    if(!pPubKeyInfo) {
-        handleError(hProv, "Out of memory.\n");
-        goto done;
-    }
-
-    if(!CryptExportPublicKeyInfo(hProv, AT_SIGNATURE, X509_ASN_ENCODING, pPubKeyInfo, &dwInfoLen)) {
-        handleError(hProv, "Error during CryptExportPublicKeyInfo for signkey.");
-        goto done;
-    }
-    printf("Contents have been written to the CERT_PUBLIC_KEY_INFO.\n");
-
-
-    // Кодирование структуры pPubKeyInfo
-
-    if(!CryptEncodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, pPubKeyInfo, 0, NULL, NULL, &size)) {
-        handleError(hProv, "Error during CryptEncodeObjectEx.");
-        goto done;
-    }
-
-    pbEncodeObj = (BYTE*) malloc(size);
-    if(!pbEncodeObj) {
-        handleError(hProv, "Out of memory.");
-        goto done;
-    }
-
-    if(!CryptEncodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, pPubKeyInfo, 0, NULL, pbEncodeObj, &size)) {
-        handleError(hProv, "Error during CryptEncodeObjectEx.");
-        goto done;
-    }
-
-    // Запись закодированных данных в файл pubkey.key
-
-    if(!(pubkey = fopen(key_fname, "w+b"))) {
-        char s[BUFSIZE];
-        snprintf(s, BUFSIZE, "Problem opening the file %s\n", key_fname);
-        handleError(hProv, s);
-        goto done;
-    }
-    fwrite(pbEncodeObj, 1, size, pubkey);
-
-    done:
-    if(hPubKey)
-        CryptDestroyKey(hPubKey);
-
-    if(pbEncodeObj)
-        free(pbEncodeObj);
-    if(pPubKeyInfo)
-        free(pPubKeyInfo);
-
-    if(pubkey)
-        fclose(pubkey);
-    return result;
-}
-
 
 // Функция подписи данных
 
@@ -273,6 +170,133 @@ BOOL signData(HCRYPTPROV hProv, const char * fn, const char * sig) {
         fclose(signature);
     return result;
 }
+
+// Функция удаления контейнера
+
+BOOL deleteContainer(HCRYPTPROV hProv, const char * cont_name) {
+
+    if(!CryptAcquireContext(&hProv, cont_name,  NULL, PROV_EC_CURVE25519, CRYPT_DELETEKEYSET)) {
+        handleError(hProv, "Error occured deleating a container.\n");
+        return FALSE;
+    }
+    printf("delete %s container.\n", cont_name);
+    return TRUE;
+}
+
+// Функция генерации ключей
+// Так как задан провайдер PROV_EC_CURVE25519,
+// то будет использоваться алгоритм ed25519
+
+BOOL genKeyMode(HCRYPTPROV hProv) {
+
+    HCRYPTKEY hPubKey = 0;
+
+    BOOL result = FALSE;
+
+    if(CryptGetUserKey(hProv, AT_SIGNATURE, &hPubKey)) {
+        printf("A signature key is available.\n");
+        result = TRUE;
+        goto done;
+    }
+    printf("No signature key is available.\n");
+
+    if(!(GetLastError() == (DWORD)NTE_NO_KEY)) {
+        handleError(hProv, "An error other than NTE_NO_KEY getting signature key.\n");
+        goto done;
+    }
+    printf("Creating a signature key pair...\n"); 
+
+    // Генерация новой пары ключей
+
+    if(!CryptGenKey(hProv, AT_SIGNATURE, 0, &hPubKey)) {
+        handleError(hProv, "Error occurred creating a signature key.\n"); 
+        goto done;
+    }
+    printf("Created a signature key pair.\n");
+
+
+    done:
+    if(hPubKey)
+        CryptDestroyKey(hPubKey);
+
+    return result;
+}
+
+BOOL getPubKey(HCRYPTPROV hProv, const char * key_fname) {
+
+    DWORD dwInfoLen;
+    DWORD size = 0;
+
+    FILE * pubkey = NULL;
+
+    BYTE * pbEncodeObj = NULL;
+
+    PCERT_PUBLIC_KEY_INFO pPubKeyInfo = NULL;
+
+    BOOL result = FALSE;
+
+    // Экспортирование сведений об открытом ключе в pPubKeyInfo
+    
+    if(!CryptExportPublicKeyInfo(hProv, AT_SIGNATURE, X509_ASN_ENCODING, NULL, &dwInfoLen)) {
+        handleError(hProv, "Error during CryptExportPublicKeyInfo for signkey.");
+        goto done;
+    }
+    printf("Size of the CERT_PUBLIC_KEY_INFO determined.\n");
+
+    pPubKeyInfo = (PCERT_PUBLIC_KEY_INFO) malloc(dwInfoLen);
+    if(!pPubKeyInfo) {
+        handleError(hProv, "Out of memory.\n");
+        goto done;
+    }
+
+    if(!CryptExportPublicKeyInfo(hProv, AT_SIGNATURE, X509_ASN_ENCODING, pPubKeyInfo, &dwInfoLen)) {
+        handleError(hProv, "Error during CryptExportPublicKeyInfo for signkey.");
+        goto done;
+    }
+    printf("Contents have been written to the CERT_PUBLIC_KEY_INFO.\n");
+
+
+    // Кодирование структуры pPubKeyInfo
+
+    if(!CryptEncodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, pPubKeyInfo, 0, NULL, NULL, &size)) {
+        handleError(hProv, "Error during CryptEncodeObjectEx.");
+        goto done;
+    }
+
+    pbEncodeObj = (BYTE*) malloc(size);
+    if(!pbEncodeObj) {
+        handleError(hProv, "Out of memory.");
+        goto done;
+    }
+
+    if(!CryptEncodeObjectEx(X509_ASN_ENCODING, X509_PUBLIC_KEY_INFO, pPubKeyInfo, 0, NULL, pbEncodeObj, &size)) {
+        handleError(hProv, "Error during CryptEncodeObjectEx.");
+        goto done;
+    }
+
+    // Запись закодированных данных в файл pubkey.key
+
+    if(!(pubkey = fopen(key_fname, "w+b"))) {
+        char s[BUFSIZE];
+        snprintf(s, BUFSIZE, "Problem opening the file %s\n", key_fname);
+        handleError(hProv, s);
+        goto done;
+    }
+    fwrite(pbEncodeObj, 1, size, pubkey);
+
+    result = TRUE;
+    done:
+    if(pbEncodeObj)
+        free(pbEncodeObj);
+    if(pPubKeyInfo)
+        free(pPubKeyInfo);
+
+    if(pubkey)
+        fclose(pubkey);
+    return result;
+}
+
+
 
 // Функция хэширования данных
 

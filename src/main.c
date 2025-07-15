@@ -1,19 +1,8 @@
 #include "../include/app.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 #define CONTAINER _TEXT("\\\\.\\HDIMAGE\\Curve")
-
-
-HCRYPTKEY hPubKey = 0;
-HCRYPTHASH hHash = 0;
-
-// static void handleError(const char *); // функция обработки ошибок
-// static void cleanUp(void); // функция освобождения памяти, закрытия дескрипторов и контекста
-//
-// static void signData(const char *, const char *); // функция подписи данных
-// static void verifySignature(const char *, const char *, const char *); // функция проверки подписи
-// static void hashData(const char *); // хэширование данных (CALG_NO_HASH)
-// static void genKeyMode(); // функция генерации ключей ed25519
-
 
 // структура для парсинга параметров командной строки
 
@@ -25,6 +14,8 @@ typedef struct {
     BOOL verify_mode;
     BOOL sign_mode;
     BOOL genkey_mode;
+    BOOL getkey_mode;
+    BOOL delcont_mode;
 } progParams;
 
 void printHelp(void);
@@ -36,6 +27,8 @@ void printHelp(void) {
             "   crypto-sign-tool [команда] [параметры]\n\n"
             "Команды: \n"
             "   keygen      Генерирование ключей\n"
+            "   getkey      Экспортировать открытый ключ\n"
+            "   del-cont    удалить контейнер с ключами\n"
             "   sign        Создание подписи для файла\n"
             "   verify      Проверка подписи\n\n"
             "Параметры: \n"
@@ -46,7 +39,9 @@ void printHelp(void) {
             "Примеры использования:\n"
             "   crypto-sign-tool sign --in <file.txt> --out <signature.sig>\n"
             "   crypto-sign-tool verify -s <signature.sig> -i <file.txt> -k <pubkey.key>\n"
-            "   crypto-sign-tool keygen -k <pubkey.key>\n\n");
+            "   crypto-sign-tool getkey -k <pubkey.key>\n"
+            "   crypto-sign-tool del-con\n"
+            "   crypto-sign-tool keygen \n\n");
 }
 
 
@@ -102,7 +97,15 @@ int main(int argc, char * argv[]) {
             exit(1);
     } else if(params.genkey_mode) {
         printf("Start genkey\n");
-        if(!genKeyMode(hProv, params.key_file))
+        if(!genKeyMode(hProv))
+            exit(1);
+    } else if(params.getkey_mode) {
+        printf("Start export publickey\n");
+        if(!getPubKey(hProv, params.key_file))
+            exit(1);
+    } else if(params.delcont_mode) {
+        printf("Start delete container\n");
+        if(!deleteContainer(hProv, CONTAINER))
             exit(1);
     }
 
@@ -129,6 +132,10 @@ BOOL parse_args(int argc, char * argv[], progParams * params) {
         params->verify_mode = TRUE;
     else if(strcmp(argv[1], "keygen") == 0)
         params->genkey_mode = TRUE;
+    else if(strcmp(argv[1], "getkey") == 0)
+        params->getkey_mode = TRUE;
+    else if(strcmp(argv[1], "del-cont") == 0)
+        params->delcont_mode = TRUE;
     else if(strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
         printHelp();
         return FALSE;
